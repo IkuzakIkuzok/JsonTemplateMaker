@@ -12,7 +12,12 @@ namespace JsonTemplateMaker
     internal sealed class MainForm : Form
     {
         private readonly SplitContainer container;
-        private readonly TextBox ns, source, destination;
+        private readonly DelayedTextBox ns, source;
+        private readonly TextBox destination;
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int[] lParam);
+        private const int EM_SETTABSTOPS = 0x00CB;
 
         [DllImport("gdi32.dll", ExactSpelling = true)]
         private static extern IntPtr AddFontMemResourceEx(byte[] pbFont, int cbFont, IntPtr pdv, out uint pcFonts);
@@ -36,7 +41,7 @@ namespace JsonTemplateMaker
             {
                 Marshal.FreeCoTaskMem(fontBufPtr);
             }
-        }
+        } // private static Font LoadFont (byte[], float)
 
         static MainForm()
         {
@@ -69,15 +74,18 @@ namespace JsonTemplateMaker
                 Font = Migu1M_9,
                 AcceptsTab = true,
                 Dock = DockStyle.Fill,
+                WordWrap = false,
+                TabIndex = 2,
                 ScrollBars = ScrollBars.Both,
                 Parent = this.container.Panel1,
             };
-
+            
             this.ns = new()
             {
                 PlaceholderText = "Namespace.ClassName",
                 Font = Migu1M_9,
                 Dock = DockStyle.Top,
+                TabIndex = 1,
                 Parent = this.container.Panel1,
             };
 
@@ -87,12 +95,17 @@ namespace JsonTemplateMaker
                 Font = Migu1M_9,
                 AcceptsTab = true,
                 Dock = DockStyle.Fill,
+                WordWrap = false,
+                TabStop = false,
                 ScrollBars = ScrollBars.Both,
                 Parent = this.container.Panel2,
             };
 
-            this.ns.TextChanged += UpdateResult;
-            this.source.TextChanged += UpdateResult;
+            SendMessage(this.source.Handle, EM_SETTABSTOPS, 1, new[] { 4 * 4 });
+            SendMessage(this.destination.Handle, EM_SETTABSTOPS, 1, new[] { 4 * 4 });
+
+            this.ns.DelayedTextChanged += UpdateResult;
+            this.source.DelayedTextChanged += UpdateResult;
         } // ctor ()
 
         private void UpdateResult(object? sender, EventArgs e)

@@ -1,6 +1,7 @@
 ﻿
 // (c) 2022 Kazuki KOHZUKI
 
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -8,7 +9,8 @@ using PlainJson = System.Collections.Generic.Dictionary<string, object>;
 
 namespace JsonTemplateMaker
 {
-    internal class JsonObject
+    [DebuggerDisplay("TypeName = {name}")]
+    internal class JsonObject : IEqualityComparer<JsonObject>
     {
         private static readonly Regex re_separator = new(@"[^a-zA-Z0-9]+[a-zA-Z0-9]");
 
@@ -33,68 +35,13 @@ namespace JsonTemplateMaker
                 RegisterProperty(key, value);
         } // internal JsonObject (PlainJson?, int, string)
 
-        private void RegisterProperty(string key, object value, int arrDepth = 0)
+        private void RegisterProperty(string key, object value)
         {
-            var type = GetTypeName(value, out var isPrimitive);
-            if (!isPrimitive)
-            {
-                var array = GetArray(value);
-                if (array == null)
-                {
-                    type = $"Json{GetPropertyName(key)}Type";
-                    var obj = JsonSerializer.Deserialize<PlainJson>(value.ToString()!);
-                    if ((obj?.Count ?? 0) == 0)
-                        type = "object";
-                    else
-                        this.subClasses.Add(new JsonObject(obj, depth + 1, type));
-                }
-                else if (array.Length == 0)
-                {
-                    type = "object";
-                }
-                else
-                {
-                    type = RegisterArray(array, GetPropertyName(key), depth);
-                }
+            var type = GetTypeName(key, value, out var _);
+            this.properties.Add(key, type);
+        } // private void RegisterProperty (string, object)
 
-            }
-            this.properties.Add(key, type + string.Join(string.Empty, Enumerable.Repeat("[]", arrDepth)));
-        } // private void RegisterProperty (string, object , [int])
-
-        private string RegisterArray(object[] array, string key, int depth)
-        {
-            var element = array[0];
-            var types = new HashSet<string>();
-            var isPrimitive = true;
-            foreach (var e in array)
-                types.Add(GetTypeName(e, out isPrimitive));
-            if (types.Count > 1) return "object[]";
-            var type = types.First();
-            if (isPrimitive)
-                return type + "[]";
-
-            var subArray = GetArray(element);
-            if (subArray == null)
-            {
-                type = $"Json{key}ElementType";
-                var obj = JsonSerializer.Deserialize<PlainJson>(element.ToString()!);
-                if ((obj?.Count ?? 0) == 0)
-                    type = "object";
-                else
-                    this.subClasses.Add(new JsonObject(obj, depth + 1, type));
-                return type + "[]";
-            }
-            else if (subArray.Length == 0)
-            {
-                return "object[]";
-            }
-            else
-            {
-                return RegisterArray(subArray, $"{key}Element", depth + 1) + "[]";
-            }
-        } // private string RegisterArray (object[])
-
-        private string GetTypeName(object value, out bool isPrimitive)
+        private string GetTypeName(string key, object value, out bool isPrimitive)
         {
             isPrimitive = true;
             var element = (JsonElement)value;
@@ -111,18 +58,55 @@ namespace JsonTemplateMaker
             {
                 if (array.Length > 0)
                 {
-                    var types = new HashSet<string>();
+                    var types = new HashSet<object>();
                     foreach (var e in array)
-                        types.Add(GetTypeName(e, out isPrimitive));
+                    {
+                        var elementType = GetTypeName(key + "Element", e, out isPrimitive);
+                        if (isPrimitive)
+                        {
+                            types.Add(elementType);
+                        }
+                        else
+                        {
+                            var jsonObj = GetJsonObject(e);
+                            if (jsonObj != null) types.Add(new JsonObject(jsonObj, depth + 1, $"Json{GetPropertyName(key)}ElementType"));
+                            else types.Add(elementType);
+                        }
+                    }
+
+                    if (key.Contains("license"))
+                    {
+                        Console.WriteLine();
+                    }
 
                     if (types.Count == 1)
                     {
-                        return types.First() + "[]";
+                        if (isPrimitive) return types.First() + "[]";
+                        else return ((JsonObject)types.First()).name + "[]";
                     }
                     else
                     {
-                        isPrimitive = false;
-                        return "object[]";
+                        if (types.All(o => o is JsonObject))
+                        {
+                            var objectType = (JsonObject)types.First();
+                            foreach (var t in types.Skip(1).Cast<JsonObject>())
+                            {
+                                if (!objectType.Equals(t))
+                                {
+                                    isPrimitive = false;
+                                    foreach (JsonObject registered in types)
+                                        this.subClasses.Remove(registered);
+                                    return "object[]";
+                                }
+                            }
+
+                            return ((JsonObject)types.First()).name + "[]";
+                        }
+                        else
+                        {
+                            isPrimitive = false;
+                            return "object[]";
+                        }
                     }
                 }
                 else
@@ -130,10 +114,35 @@ namespace JsonTemplateMaker
                     return "object[]";
                 }
             }
-            else if (IsJsonObject(value))
+
+            PlainJson? obj;
+            if ((obj = GetJsonObject(value)) != null)
             {
                 isPrimitive = false;
-                return string.Empty;
+                var type = $"Json{GetPropertyName(key)}Type";
+                if ((obj?.Count ?? 0) == 0)
+                    type = "object";
+                else
+                {
+                    var subClass = new JsonObject(obj, depth + 1, type);
+                    var registered = this.subClasses.FirstOrDefault(sc => sc.name == subClass.name);
+                    if (registered != default && !registered.Equals(subClass))
+                    {
+                        var keys = this.properties.Where(kt => kt.Value == registered.name).Select(kt => kt.Key);
+                        foreach (var k in keys)
+                            this.properties[k] = "object";
+
+                        this.subClasses.Remove(registered);
+                        type = "object";
+                    }
+                    else
+                    {
+                        if (registered == default)
+                            this.subClasses.Add(subClass);
+                    }
+                }
+
+                return type;
             }
             
             return "object";
@@ -146,15 +155,15 @@ namespace JsonTemplateMaker
             return element.EnumerateArray().Cast<object>().ToArray();
         } // private static object[]? GetArray (object)
 
-        private static bool IsJsonObject(object value)
+        private static PlainJson? GetJsonObject(object value)
         {
             try
             {
-                return JsonSerializer.Deserialize<PlainJson>(value.ToString()!) != null;
+                return JsonSerializer.Deserialize<PlainJson>(value.ToString()!);
             }
             catch
             {
-                return false;
+                return null;
             }
         } // private static bool IsJsonObject (object)
 
@@ -165,12 +174,22 @@ namespace JsonTemplateMaker
         } // private static string GetPropertyName (string)
 
         override public string ToString()
+            => ToString($"Represents {this.name}.");
+
+        private string ToString(string classSummary)
         {
             var sb = new StringBuilder();
             if (this.depth == 0)
             {
                 sb.AppendLine();
-                sb.AppendLine($"/* Generated by {nameof(JsonTemplateMaker)} */");
+                sb.AppendLine($"/*");
+                sb.AppendLine($" * Generated by {nameof(JsonTemplateMaker)}");
+                sb.AppendLine($" *");
+                sb.AppendLine($" * The effect of the {nameof(JsonTemplateMaker)} license does not extend to this code,");
+                sb.AppendLine($" * which is a deliverable of {nameof(JsonTemplateMaker)}. Therefore, no {nameof(JsonTemplateMaker)}");
+                sb.AppendLine($" * license is required to use, copy, modify, merge, publish, distribute,");
+                sb.AppendLine($" * sublicense, and/or sell this generated code.");
+                sb.AppendLine($" */");
                 sb.AppendLine();
                 sb.AppendLine("using System.Text.Json.Serialization;");
                 sb.AppendLine();
@@ -180,11 +199,17 @@ namespace JsonTemplateMaker
 
             var indent = new string('\t', this.depth + 1);
 
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// {classSummary}");
+            sb.AppendLine($"{indent}/// </summary>");
             sb.AppendLine($"{indent}public sealed class {this.name}");
             sb.AppendLine($"{indent}{{");
 
             foreach ((var name, var type) in this.properties.Items())
             {
+                sb.AppendLine($"{indent}\t/// <summary>");
+                sb.AppendLine($"{indent}\t/// Gets or sets the {name}.");
+                sb.AppendLine($"{indent}\t/// </summary>");
                 sb.AppendLine($"{indent}\t[JsonPropertyName(\"{name}\")]");
 
                 var propName = GetPropertyName(name);
@@ -192,12 +217,21 @@ namespace JsonTemplateMaker
                 sb.AppendLine();
             }
 
+            sb.AppendLine($"{indent}\t/// <summary>");
+            sb.AppendLine($"{indent}\t/// Initializes a new instance of the <see cref=\"{this.name}\"/> class.");
+            sb.AppendLine($"{indent}\t/// </summary>");
             sb.AppendLine($"{indent}\tpublic {this.name}() {{ }}");
 
             foreach (var sub in this.subClasses)
             {
+                var prop = this.properties.First(kt => kt.Value.StartsWith(sub.name)).Key;
+
+                var summary = sub.name.EndsWith("ElementType")
+                    ? $"Represents an element of <see cref=\"{prop}\"/>."
+                    : $"Represents a <see cref=\"{prop}\"/>.";
+
                 sb.AppendLine();
-                sb.AppendLine(sub.ToString());
+                sb.AppendLine(sub.ToString(summary));
             }
 
             sb.Append($"{indent}}}");
@@ -208,6 +242,39 @@ namespace JsonTemplateMaker
                 sb.AppendLine("}");
             }
             return sb.ToString();
-        } // override public string ToString ()
-    } // internal class JsonObject
+        } // private string ToString (string)
+
+        override public bool Equals(object? obj)
+        {
+            if (obj is not JsonObject json) return false;
+
+            if (this.properties.Count != json.properties.Count) return false;
+            if (this.subClasses.Count != json.subClasses.Count) return false;
+
+            foreach ((var key, var xType) in this.properties.Items())
+            {
+                if (!json.properties.TryGetValue(key, out var yType)) return false;
+                if (xType != yType) return false;
+            }
+
+            foreach (var sub in this.subClasses)
+            {
+                if (!json.subClasses.Contains(sub)) return false;
+            }
+
+            return true;
+        } // override public bool Equals (object?)
+
+        override public int GetHashCode()
+            => base.GetHashCode();
+
+        public bool Equals(JsonObject? x, JsonObject? y)
+        {
+            if (x == null) return y == null;
+            return x.Equals(y);
+        } // public bool Equals (JsonObject?, JsonObject?)
+
+        public int GetHashCode(JsonObject obj)
+            => obj.GetHashCode();
+    } // internal class JsonObject : IEqualityComparer<JsonObject>
 } // namespace JsonTemplateMaker
