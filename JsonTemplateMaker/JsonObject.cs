@@ -10,7 +10,7 @@ namespace JsonTemplateMaker
 {
     internal class JsonObject
     {
-        private static readonly Regex re_separator = new(@"[-_\s]+[a-zA-Z0-9]");
+        private static readonly Regex re_separator = new(@"[^a-zA-Z0-9]+[a-zA-Z0-9]");
 
         private readonly Dictionary<string, string> properties = new();
         private readonly List<JsonObject> subClasses = new();
@@ -59,7 +59,7 @@ namespace JsonTemplateMaker
 
             }
             this.properties.Add(key, type + string.Join(string.Empty, Enumerable.Repeat("[]", arrDepth)));
-        }
+        } // private void RegisterProperty (string, object , [int])
 
         private string RegisterArray(object[] array, string key, int depth)
         {
