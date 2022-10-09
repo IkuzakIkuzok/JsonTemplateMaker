@@ -12,7 +12,7 @@ namespace JsonTemplateMaker
     internal sealed class MainForm : Form
     {
         private readonly SplitContainer container;
-        private readonly DelayedTextBox ns, source;
+        private readonly AdvancedTextBox ns, source;
         private readonly TextBox destination;
 
         [DllImport("user32.dll")]
@@ -59,6 +59,7 @@ namespace JsonTemplateMaker
         private MainForm()
         {
             this.Text = nameof(JsonTemplateMaker);
+            this.Size = new(1200, 675);
 
             this.container = new()
             {
@@ -70,6 +71,10 @@ namespace JsonTemplateMaker
 
             this.source = new()
             {
+                PlaceholderText = @"{
+    ""key"": ""value""
+}
+",
                 Multiline = true,
                 Font = Migu1M_9,
                 AcceptsTab = true,
@@ -91,6 +96,7 @@ namespace JsonTemplateMaker
 
             this.destination = new()
             {
+                PlaceholderText = new JsonObject(this.source.PlaceholderText, "Namespace", "ClassName").ToString().Replace("\t", "    "),
                 Multiline = true,
                 Font = Migu1M_9,
                 AcceptsTab = true,
@@ -106,6 +112,8 @@ namespace JsonTemplateMaker
 
             this.ns.DelayedTextChanged += UpdateResult;
             this.source.DelayedTextChanged += UpdateResult;
+
+            this.container.SplitterDistance = this.Width / 2;
         } // ctor ()
 
         private void UpdateResult(object? sender, EventArgs e)

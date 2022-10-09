@@ -7,7 +7,7 @@ using Timer = System.Windows.Forms.Timer;
 namespace JsonTemplateMaker
 {
     [DesignerCategory("Code")]
-    internal class DelayedTextBox : TextBox
+    internal class AdvancedTextBox : TextBox
     {
         private Timer? delayedTextChangedTimer;
 
@@ -22,9 +22,9 @@ namespace JsonTemplateMaker
         internal event EventHandler? DelayedTextChanged;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="DelayedTextBox"/> class.
+        /// Initializes a new instance of the <see cref="AdvancedTextBox"/> class.
         /// </summary>
-        internal DelayedTextBox() : base()
+        internal AdvancedTextBox() : base()
         {
             this.DelayedTextChangedTimeout = 1_000;
         } // ctor ()
@@ -73,5 +73,5 @@ namespace JsonTemplateMaker
 
             base.Dispose(disposing);
         } // override protected void Dispose (bool)
-    } // internal class DelayedTextBox : TextBox
+    } // internal class AdvancedTextBox : TextBox
 } // namespace JsonTemplateMaker

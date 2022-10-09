@@ -25,7 +25,7 @@ namespace JsonTemplateMaker
             this.ns = ns;
         } // ctor (string, string, string)
 
-        internal JsonObject(PlainJson? json, int depth, string className)
+        private JsonObject(PlainJson? json, int depth, string className)
         {
             this.depth = depth;
             this.name = className;
@@ -33,7 +33,7 @@ namespace JsonTemplateMaker
 
             foreach ((var key, var value) in json.Items())
                 RegisterProperty(key, value);
-        } // internal JsonObject (PlainJson?, int, string)
+        } // private JsonObject (PlainJson?, int, string)
 
         private void RegisterProperty(string key, object value)
         {
@@ -69,43 +69,44 @@ namespace JsonTemplateMaker
                         else
                         {
                             var jsonObj = GetJsonObject(e);
-                            if (jsonObj != null) types.Add(new JsonObject(jsonObj, depth + 1, $"Json{GetPropertyName(key)}ElementType"));
+                            if (jsonObj != null) types.Add(new JsonObject(jsonObj, depth + 1, $"Json{GetPropertyName(key)}ElementObject"));
                             else types.Add(elementType);
                         }
-                    }
-
-                    if (key.Contains("license"))
-                    {
-                        Console.WriteLine();
                     }
 
                     if (types.Count == 1)
                     {
                         if (isPrimitive) return types.First() + "[]";
-                        else return ((JsonObject)types.First()).name + "[]";
+                        else
+                        {
+                            var t = types.First();
+                            if (t is string s) return s + "[]";
+                            return ((JsonObject)t).name + "[]";
+                        }
                     }
                     else
                     {
                         if (types.All(o => o is JsonObject))
                         {
-                            var objectType = (JsonObject)types.First();
-                            foreach (var t in types.Skip(1).Cast<JsonObject>())
+                            var jsonObjects = types.Cast<JsonObject>();
+                            var minimum = GetMinimumObject(jsonObjects);
+
+                            foreach (var registered in jsonObjects)
+                                this.subClasses.Remove(registered);
+
+                            if (minimum.properties.Count == 0)
                             {
-                                if (!objectType.Equals(t))
-                                {
-                                    isPrimitive = false;
-                                    foreach (JsonObject registered in types)
-                                        this.subClasses.Remove(registered);
-                                    return "object[]";
-                                }
+                                isPrimitive = true;
+                                return "object[]";
                             }
 
-                            return ((JsonObject)types.First()).name + "[]";
+                            this.subClasses.Add(minimum);
+                            return minimum.name + "[]";
                         }
                         else
                         {
-                            isPrimitive = false;
-                            return "object[]";
+                            isPrimitive = true;
+                            return GetMinimumObject(types) + "[]";
                         }
                     }
                 }
@@ -119,7 +120,7 @@ namespace JsonTemplateMaker
             if ((obj = GetJsonObject(value)) != null)
             {
                 isPrimitive = false;
-                var type = $"Json{GetPropertyName(key)}Type";
+                var type = $"Json{GetPropertyName(key)}Object";
                 if ((obj?.Count ?? 0) == 0)
                     type = "object";
                 else
@@ -154,6 +155,109 @@ namespace JsonTemplateMaker
             if (element.ValueKind != JsonValueKind.Array) return null;
             return element.EnumerateArray().Cast<object>().ToArray();
         } // private static object[]? GetArray (object)
+
+        private static JsonObject GetMinimumObject(IEnumerable<JsonObject> objects)
+        {
+            var obj = objects.First();
+
+            #region properties
+
+            foreach ((var k, var v) in obj.properties)
+            {
+                if (!objects.All(o => o.properties.TryGetValue(k, out var t) && t == v))
+                {
+                    if (objects.All(o => o.properties.TryGetValue(k, out var _)))
+                    {
+                        var propTypes = objects.Select(o => o.properties[k]);
+                        var arrayDepth = propTypes.Select(t => t.Split("[").Length);
+                        var depth = new HashSet<int>(arrayDepth);
+                        if (depth.Count > 1)
+                        {
+                            obj.properties[k] = "object";
+                        }
+                        else if (propTypes.All(t => !CheckPrimitive(t)))
+                        {
+                            var propType = GetMinimumObject(objects.Select(o => o.subClasses.First(t => t.name == string.Join("", o.properties[k].TakeWhile(c => c != '[')))));
+                            if (propType.properties.Count == 0)
+                            {
+                                obj.properties[k] = "object";
+                            }
+                            else
+                            {
+                                obj.subClasses.Add(propType);
+                                obj.properties[k] = propType.name;
+                            }
+                        }
+                        else
+                        {
+                            obj.properties[k] = GetMinimumObject(propTypes);
+                        }
+                    }
+                    else
+                    {
+                        obj.properties.Remove(k);
+                    }
+                    obj.subClasses.RemoveAll(o => o.name == v);
+                }
+            }
+
+            #endregion properties
+
+            #region sub classes
+
+            var removeList = new List<JsonObject>();
+            var addList = new List<JsonObject>();
+            foreach (var sub in obj.subClasses)
+            {
+                if (!objects.All(o => o.subClasses.Contains(sub)))
+                {
+                    var types = objects.SelectMany(o => o.subClasses).Where(t => t.name == sub.name);
+                    var prop = obj.properties.FirstOrDefault(kt => kt.Value.StartsWith(sub.name)).Key;
+                    if (!string.IsNullOrEmpty(prop))
+                    {
+                        var minimum = GetMinimumObject(types);
+                        if (minimum.properties.Count == 0)
+                        {
+                            foreach (var o in objects)
+                                o.properties[prop] = "object";
+                        }
+                        else
+                        {
+                            addList.Add(minimum);
+                            foreach (var o in objects)
+                                o.properties[prop] = o.properties[prop].Replace(sub.name, minimum.name);
+                        }
+                    }
+                    removeList.Add(sub);
+                }
+            }
+
+            foreach (var sub in removeList) obj.subClasses.Remove(sub);
+            foreach (var sub in addList)
+            {
+                if (!obj.subClasses.Contains(sub))
+                    obj.subClasses.Add(sub);
+            }
+
+            #endregion sub classes
+
+            return obj;
+        } // private static JsonObject GetMinimumObject (IEnumerable<JsonObject>)
+
+        private static string GetMinimumObject(IEnumerable<object> objects)
+        {
+            if (objects.Contains("object")) return "object";
+
+            if (objects.OfType<JsonObject>().Any()) return "object";
+
+            if (objects.Contains("float")) return "float";
+            if (objects.Contains("long")) return "long";
+
+            return "object";
+        } // private static string GetMinimumObject (IEnumerable<object>)
+
+        private static bool CheckPrimitive(string typeName)
+            => !typeName.StartsWith("Json");
 
         private static PlainJson? GetJsonObject(object value)
         {
@@ -224,9 +328,9 @@ namespace JsonTemplateMaker
 
             foreach (var sub in this.subClasses)
             {
-                var prop = this.properties.First(kt => kt.Value.StartsWith(sub.name)).Key;
+                var prop = GetPropertyName(this.properties.First(kt => kt.Value.StartsWith(sub.name)).Key);
 
-                var summary = sub.name.EndsWith("ElementType")
+                var summary = sub.name.EndsWith("ElementObject")
                     ? $"Represents an element of <see cref=\"{prop}\"/>."
                     : $"Represents a <see cref=\"{prop}\"/>.";
 
@@ -248,6 +352,7 @@ namespace JsonTemplateMaker
         {
             if (obj is not JsonObject json) return false;
 
+            if (this.name != json.name) return false;
             if (this.properties.Count != json.properties.Count) return false;
             if (this.subClasses.Count != json.subClasses.Count) return false;
 
