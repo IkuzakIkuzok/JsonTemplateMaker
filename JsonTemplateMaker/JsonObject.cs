@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using PlainJson = System.Collections.Generic.Dictionary<string, object>;
 
@@ -13,6 +14,8 @@ namespace JsonTemplateMaker;
 [DebuggerDisplay("TypeName = {name}")]
 internal partial class JsonObject : IEqualityComparer<JsonObject>
 {
+    private static readonly string[] number_types = ["int", "long", "float"];
+
     private static readonly Regex re_separator = RegexSeparator();
     private static readonly Regex re_digits = RegexDigits();
 
@@ -22,10 +25,11 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
     private readonly int depth;
     private readonly string ns = string.Empty, name;
 
-    internal JsonObject(string json, string ns, string className) : this(JsonSerializer.Deserialize<PlainJson>(json), 0, className)
+    internal JsonObject(string json, string ns, string className, JsonSerializerOptions serializerOptions)
+        : this(JsonSerializer.Deserialize<PlainJson>(json, serializerOptions), 0, className)
     {
         this.ns = ns;
-    } // ctor (string, string, string)
+    } // ctor (string, string, string, JsonSerializerOptions)
 
     private JsonObject(PlainJson? json, int depth, string className)
     {
@@ -382,7 +386,11 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         sb.AppendLine($"{indent}public sealed class {this.name}");
         sb.AppendLine($"{indent}{{");
 
-        WriteProperties(sb, indent, nullable, docComment, cancellationToken);
+        var numberFlags =
+            outputOptions.NumberHandlingAttr == JsonNumberHandling.Strict
+            ? string.Empty
+            : outputOptions.NumberHandlingAttr.GetFlagsString();
+        WriteProperties(sb, indent, nullable, docComment, numberFlags, cancellationToken);
 
         // constructor
         if (docComment)
@@ -451,7 +459,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
     } // private void WriteHeader (StringBuilder, bool)
 
-    private void WriteProperties(StringBuilder sb, string indent, bool nullable, bool docComment, CancellationToken? cancellationToken)
+    private void WriteProperties(StringBuilder sb, string indent, bool nullable, bool docComment, string numberFlags, CancellationToken? cancellationToken)
     {
         foreach ((var name, var type) in this.properties.Items())
         {
@@ -465,11 +473,14 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             }
             sb.AppendLine($"{indent}\t[JsonPropertyName(\"{name}\")]");
 
+            if (number_types.Contains(type) && !string.IsNullOrEmpty(numberFlags))
+                sb.AppendLine($"{indent}\t[JsonNumberHandling({numberFlags})]");
+
             var propName = GetPropertyName(name);
             sb.AppendLine($"{indent}\tpublic {type}{(CheckStruct(type) || !nullable ? "" : "?")} {propName} {{ get; set; }}");
             sb.AppendLine();
         }
-    } // private void WriteProperties (StringBuilder, string, bool, bool, CancellationToken?)
+    } // private void WriteProperties (StringBuilder, string, bool, bool, string, CancellationToken?)
 
     private void WriteTopClassMembers(StringBuilder sb, string indent, bool docComment)
     {

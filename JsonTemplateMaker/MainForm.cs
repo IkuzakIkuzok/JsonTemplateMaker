@@ -5,6 +5,8 @@ using JsonTemplateMaker.Properties;
 using System.ComponentModel;
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace JsonTemplateMaker;
@@ -28,7 +30,9 @@ internal sealed partial class MainForm : Form
     private readonly AdvancedTextBox ns, source;
     private readonly TextBox destination;
     private readonly ToolStripMenuItem tabWidthSelector;
+    private readonly ToolStripMenuItem allowTrailingCommas, allowComment, maxDepthSelector;
     private readonly ToolStripMenuItem fileScopedNamespace, nullable, documentationComment, endOfBlockComment;
+    private readonly ToolStripMenuItem numberReadFromString, numberNamedFloat, numberWriteAsString;
 
     private static readonly Regex re_identifier = RegexIdentifier();
 
@@ -45,13 +49,33 @@ internal sealed partial class MainForm : Form
     private static int pfc_counter = 0;
     internal static readonly Font Migu1M_9;
 
+    private JsonSerializerOptions JsonSerializerOptions => new()
+    {
+        AllowTrailingCommas = this.allowTrailingCommas.Checked,
+        MaxDepth = this.maxDepthSelector.GetSelectedTag(64),
+        ReadCommentHandling = this.allowComment.Checked ? JsonCommentHandling.Skip : JsonCommentHandling.Disallow,
+    };
+
     private CSharpOutputOptions CSharpOutputOptions => new()
     {
         FileScopedNamespaces = this.fileScopedNamespace.Checked,
         Nullable = this.nullable.Checked,
         DocumentationComment = this.documentationComment.Checked,
         EndOfBlockComment = this.endOfBlockComment.Checked,
+        NumberHandlingAttr = this.NumberHandling,
     };
+
+    private JsonNumberHandling NumberHandling
+    {
+        get
+        {
+            var flag = JsonNumberHandling.Strict;
+            if (this.numberReadFromString.Checked) flag |= JsonNumberHandling.AllowReadingFromString;
+            if (this.numberNamedFloat.Checked) flag |= JsonNumberHandling.AllowNamedFloatingPointLiterals;
+            if (this.numberWriteAsString.Checked) flag |= JsonNumberHandling.WriteAsString;
+            return flag;
+        }
+    }
 
     private static Font LoadFont(byte[] fontBuf, float size)
     {
@@ -208,6 +232,57 @@ internal sealed partial class MainForm : Form
 
         #endregion menu.view
 
+        #region menu.json
+        
+        var json = new ToolStripMenuItem()
+        {
+            Text = "&JSON",
+        };
+        ms.Items.Add(json);
+
+        var defaultJsonOptions = new JsonSerializerOptions()
+        {
+            AllowTrailingCommas = true,
+            MaxDepth = 64,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+        };
+
+        this.allowTrailingCommas = new()
+        {
+            Text = "Allow trailing &commas",
+            Checked = defaultJsonOptions.AllowTrailingCommas,
+        };
+        this.allowTrailingCommas.Click += ToggleMenuOption;
+        json.DropDownItems.Add(this.allowTrailingCommas);
+
+        this.allowComment = new()
+        {
+            Text = "Allow &comment",
+            Checked = defaultJsonOptions.ReadCommentHandling == JsonCommentHandling.Skip,
+        };
+        this.allowComment.Click += ToggleMenuOption;
+        json.DropDownItems.Add(this.allowComment);
+
+        this.maxDepthSelector = new()
+        {
+            Text = "Max &depth",
+        };
+        json.DropDownItems.Add(this.maxDepthSelector);
+
+        foreach (var d in new[] { 4, 8, 16, 32, 64 })
+        {
+            var item = new ToolStripMenuItem()
+            {
+                Text = d.ToString(),
+                Tag = d,
+                Checked = d == defaultJsonOptions.MaxDepth,
+            };
+            item.Click += SetMaxDepth;
+            this.maxDepthSelector.DropDownItems.Add(item);
+        }
+        
+        #endregion menu.json
+
         #region menu.C#
 
         var csharp = new ToolStripMenuItem()
@@ -216,39 +291,69 @@ internal sealed partial class MainForm : Form
         };
         ms.Items.Add(csharp);
 
-        var defaultOptions = new CSharpOutputOptions();
+        var defaultCSOptions = new CSharpOutputOptions();
 
         this.fileScopedNamespace = new()
         {
             Text = "&File-scoped namespace",
-            Checked = defaultOptions.FileScopedNamespaces,
+            Checked = defaultCSOptions.FileScopedNamespaces,
         };
-        this.fileScopedNamespace.Click += ToggleCSharpOption;
+        this.fileScopedNamespace.Click += ToggleMenuOption;
         csharp.DropDownItems.Add(this.fileScopedNamespace);
 
         this.nullable = new()
         {
             Text = "&Nullable",
-            Checked = defaultOptions.Nullable,
+            Checked = defaultCSOptions.Nullable,
         };
-        this.nullable.Click += ToggleCSharpOption;
+        this.nullable.Click += ToggleMenuOption;
         csharp.DropDownItems.Add(this.nullable);
 
         this.documentationComment = new()
         {
             Text = "&Documentation comment",
-            Checked = defaultOptions.DocumentationComment,
+            Checked = defaultCSOptions.DocumentationComment,
         };
-        this.documentationComment.Click += ToggleCSharpOption;
+        this.documentationComment.Click += ToggleMenuOption;
         csharp.DropDownItems.Add(this.documentationComment);
 
         this.endOfBlockComment = new()
         {
             Text = "End of block &comment",
-            Checked = defaultOptions.EndOfBlockComment,
+            Checked = defaultCSOptions.EndOfBlockComment,
         };
-        this.endOfBlockComment.Click += ToggleCSharpOption;
+        this.endOfBlockComment.Click += ToggleMenuOption;
         csharp.DropDownItems.Add(this.endOfBlockComment);
+
+        var numberHandling = new ToolStripMenuItem()
+        {
+            Text = "&Number handling attributes",
+        };
+        csharp.DropDownItems.Add(numberHandling);
+
+        this.numberReadFromString = new()
+        {
+            Text = "Allow reading from &string",
+            Checked = defaultCSOptions.NumberHandlingAttr.HasFlag(JsonNumberHandling.AllowReadingFromString),
+        };
+        this.numberReadFromString.Click += ToggleMenuOption;
+        numberHandling.DropDownItems.Add(this.numberReadFromString);
+
+        this.numberNamedFloat = new()
+        {
+            Text = "Allow named floating point &literals",
+            Checked = defaultCSOptions.NumberHandlingAttr.HasFlag(JsonNumberHandling.AllowNamedFloatingPointLiterals),
+        };
+        this.numberNamedFloat.Click += ToggleMenuOption;
+        numberHandling.DropDownItems.Add(this.numberNamedFloat);
+
+        this.numberWriteAsString = new()
+        {
+            Text = "Write as &string",
+            Checked = defaultCSOptions.NumberHandlingAttr.HasFlag(JsonNumberHandling.WriteAsString),
+        };
+        this.numberWriteAsString.Click += ToggleMenuOption;
+        numberHandling.DropDownItems.Add(this.numberWriteAsString);
 
         #endregion menu.C#
 
@@ -298,7 +403,7 @@ internal sealed partial class MainForm : Form
         var dst = await Task.Run(() => {
             try
             {
-                var json = new JsonObject(source, @namespace, name);
+                var json = new JsonObject(source, @namespace, name, this.JsonSerializerOptions);
                 return json.ToString(this.CSharpOutputOptions, cancellationTokenSource.Token);
             }
             catch (OperationCanceledException)
@@ -321,7 +426,7 @@ internal sealed partial class MainForm : Form
     private void UpdatePlaceholder()
     {
         this.source.PlaceholderText = PLACEHOLDER.Replace("\t", new(' ', this.tabWidth));
-        dstPlaceholder = new JsonObject(PLACEHOLDER, NAMESPACE, CLASSNAME).ToString(this.CSharpOutputOptions);
+        dstPlaceholder = new JsonObject(PLACEHOLDER, NAMESPACE, CLASSNAME, this.JsonSerializerOptions).ToString(this.CSharpOutputOptions);
         this.destination.PlaceholderText = dstPlaceholder.Replace("\t", new(' ', this.tabWidth));
     } // private void UpdatePlaceholder ()
 
@@ -363,13 +468,22 @@ internal sealed partial class MainForm : Form
         this.ns.Font = this.source.Font = this.destination.Font = fd.Font;
     } // private void SetFont (object?, EventArgs)
 
-    private void ToggleCSharpOption(object? sender, EventArgs e)
+    private void ToggleMenuOption(object? sender, EventArgs e)
     {
         if (sender is not ToolStripMenuItem item) return;
         item.Checked = !item.Checked;
         UpdateResult();
         UpdatePlaceholder();
-    } // private void ToggleCSharpOption (object?, EventArgs)
+    } // private void ToggleMenuOption (object?, EventArgs)
+
+    private void SetMaxDepth(object? sender, EventArgs e)
+    {
+        if (sender is not ToolStripMenuItem item) return;
+        if (item.Tag is not int depth) return;
+        this.maxDepthSelector.SetChecked(depth);
+        UpdateResult();
+        UpdatePlaceholder();
+    } // private void SetMaxDepth (object?, EventArgs)
 
     private void LoadJsonFile(object? sender, EventArgs e)
     {

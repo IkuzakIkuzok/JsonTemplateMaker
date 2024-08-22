@@ -1,6 +1,8 @@
 ﻿
 // (c) 2022-2024 Kazuki KOHZUKI
 
+using System.Text.Json.Serialization;
+
 namespace JsonTemplateMaker;
 
 internal readonly struct CSharpOutputOptions
@@ -12,6 +14,8 @@ internal readonly struct CSharpOutputOptions
     internal bool DocumentationComment { get; init; } = true;
 
     internal bool EndOfBlockComment { get; init; } = false;
+
+    internal JsonNumberHandling NumberHandlingAttr { get; init; } = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals;
 
     public CSharpOutputOptions() { }
 } // internal readonly struct CSharpOutputOptions

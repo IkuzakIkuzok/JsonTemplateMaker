@@ -13,4 +13,15 @@ internal static class ToolStripMenuHelper
             item.Checked = item.Tag is T t && t.Equals(tag);
         }
     } // internal static void SetChecked<T> (this ToolStripMenuItem, T)
+
+    internal static T GetSelectedTag<T>(this ToolStripMenuItem parent, T defaultValue)
+    {
+        foreach (var child in parent.DropDownItems)
+        {
+            if (child is not ToolStripMenuItem item) continue;
+            if (!item.Checked) continue;
+            if (item.Tag is T t) return t;
+        }
+        return defaultValue;
+    } // internal static T GetSelectedTag<T> (this ToolStripMenuItem, T)
 } // internal static class ToolStripMenuHelper
