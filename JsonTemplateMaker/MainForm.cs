@@ -32,12 +32,12 @@ internal sealed partial class MainForm : Form
 
     private int tabWidth = 4;
 
-    [DllImport("user32.dll")]
-    static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int[] lParam);
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageA")]
+    private static partial IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, [In] int[] lParam);
     private const int EM_SETTABSTOPS = 0x00CB;
 
-    [DllImport("gdi32.dll", ExactSpelling = true)]
-    private static extern IntPtr AddFontMemResourceEx(byte[] pbFont, int cbFont, IntPtr pdv, out uint pcFonts);
+    [LibraryImport("gdi32.dll")]
+    private static partial IntPtr AddFontMemResourceEx([In] byte[] pbFont, int cbFont, IntPtr pdv, out uint pcFonts);
 
     private static readonly PrivateFontCollection pfc;
     private static int pfc_counter = 0;
