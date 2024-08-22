@@ -1,7 +1,6 @@
 ﻿
 // (c) 2022-2024 Kazuki KOHZUKI
 
-using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
@@ -359,10 +358,10 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
     override public string ToString()
         => ToString(new());
 
-    internal string ToString(CSharpOutputOptions outputOptions)
-        => ToString($"Represents {this.name}.", outputOptions);
+    internal string ToString(CSharpOutputOptions outputOptions, CancellationToken? cancellationToken = default)
+        => ToString($"Represents {this.name}.", outputOptions, cancellationToken);
 
-    private string ToString(string classSummary, CSharpOutputOptions outputOptions)
+    private string ToString(string classSummary, CSharpOutputOptions outputOptions, CancellationToken? cancellationToken)
     {
         var fileScopedNamespace = outputOptions.FileScopedNamespaces;
         var nullable = outputOptions.Nullable;
@@ -383,7 +382,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         sb.AppendLine($"{indent}public sealed class {this.name}");
         sb.AppendLine($"{indent}{{");
 
-        WriteProperties(sb, indent, nullable, docComment);
+        WriteProperties(sb, indent, nullable, docComment, cancellationToken);
 
         // constructor
         if (docComment)
@@ -397,7 +396,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         if (this.depth == 0)
             WriteTopClassMembers(sb, indent, docComment);
 
-        WriteSubClasses(sb, outputOptions);
+        WriteSubClasses(sb, outputOptions, cancellationToken);
 
         // end of class
         sb.Append($"{indent}}}");
@@ -417,8 +416,10 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             }
         }
 
+        cancellationToken?.ThrowIfCancellationRequested();
+
         return sb.ToString();
-    } // private string ToString (string, CSharpOutputOptions)
+    } // private string ToString (string, CSharpOutputOptions, CancellationToken?)
 
     #region ToString.sub
 
@@ -450,10 +451,12 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
     } // private void WriteHeader (StringBuilder, bool)
 
-    private void WriteProperties(StringBuilder sb, string indent, bool nullable, bool docComment)
+    private void WriteProperties(StringBuilder sb, string indent, bool nullable, bool docComment, CancellationToken? cancellationToken)
     {
         foreach ((var name, var type) in this.properties.Items())
         {
+            cancellationToken?.ThrowIfCancellationRequested();
+
             if (docComment)
             {
                 sb.AppendLine($"{indent}\t/// <summary>");
@@ -466,7 +469,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             sb.AppendLine($"{indent}\tpublic {type}{(CheckStruct(type) || !nullable ? "" : "?")} {propName} {{ get; set; }}");
             sb.AppendLine();
         }
-    } // private void WriteProperties (StringBuilder, string, bool, bool)
+    } // private void WriteProperties (StringBuilder, string, bool, bool, CancellationToken?)
 
     private void WriteTopClassMembers(StringBuilder sb, string indent, bool docComment)
     {
@@ -488,10 +491,12 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         sb.AppendLine($"{indent}\t\t=> JsonSerializer.Serialize(this);");
     } // private void WriteTopClassMembers (StringBuilder, string, bool)
 
-    private void WriteSubClasses(StringBuilder sb, CSharpOutputOptions outputOptions)
+    private void WriteSubClasses(StringBuilder sb, CSharpOutputOptions outputOptions, CancellationToken? cancellationToken)
     {
         foreach (var sub in this.subClasses)
         {
+            cancellationToken?.ThrowIfCancellationRequested();
+
             var prop = GetPropertyName(this.properties.First(kt => kt.Value.StartsWith(sub.name)).Key);
 
             var summary = sub.name.EndsWith("ElementObject")
@@ -499,9 +504,9 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
                 : $"Represents a <see cref=\"{prop}\"/>.";
 
             sb.AppendLine();
-            sb.AppendLine(sub.ToString(summary, outputOptions));
+            sb.AppendLine(sub.ToString(summary, outputOptions, cancellationToken));
         }
-    } // private void WriteSubClasses (StringBuilder, string)
+    } // private void WriteSubClasses (StringBuilder, string, CancellationToken?)
 
     #endregion ToString.sub
 

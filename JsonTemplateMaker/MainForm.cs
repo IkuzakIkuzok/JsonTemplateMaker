@@ -22,6 +22,8 @@ internal sealed partial class MainForm : Form
 
     private static string dstPlaceholder = string.Empty;
 
+    private static CancellationTokenSource? cancellationTokenSource;
+
     private readonly SplitContainer container;
     private readonly AdvancedTextBox ns, source;
     private readonly TextBox destination;
@@ -278,15 +280,40 @@ internal sealed partial class MainForm : Form
             var ns = string.Join('.', fullyQualifiedName.SkipLast(1).ToArray());
 
             var src = this.source.Text;
-            var json = new JsonObject(src, ns, name);
-
-            this.destination.Text = json.ToString(this.CSharpOutputOptions);
+            _ = UpdateResultText(src, ns, name);
         }
         catch (Exception e)
         {
             this.destination.Text = e.ToString();
         }
     } // private void UpdateResult ()
+
+    private async Task UpdateResultText(string source, string @namespace, string name)
+    {
+        cancellationTokenSource?.Cancel();
+        cancellationTokenSource?.Dispose();
+        cancellationTokenSource = new();
+        this.destination.Text = "Processing...";
+
+        var dst = await Task.Run(() => {
+            try
+            {
+                var json = new JsonObject(source, @namespace, name);
+                return json.ToString(this.CSharpOutputOptions, cancellationTokenSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+            catch (Exception e)
+            {
+                return e.ToString();
+            }
+        });
+
+        if (dst is not null)
+            this.destination.Text = dst;
+    } // private async Task UpdateResultText ()
 
     private void UpdateResult(object? sender, EventArgs e)
         => UpdateResult();
