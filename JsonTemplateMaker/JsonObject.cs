@@ -166,75 +166,29 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
 
         #region properties
 
-        foreach ((var k, var v) in obj.properties)
-        {
-            if (!objects.All(o => o.properties.TryGetValue(k, out var t) && t == v))
-            {
-                if (objects.All(o => o.properties.TryGetValue(k, out var _)))
-                {
-                    var propTypes = objects.Select(o => o.properties[k]);
-            var arrayDepth = propTypes.Select(t => t.Split("[").Length);
-            var depth = new HashSet<int>(arrayDepth);
-            if (depth.Count > 1)
-            {
-                        obj.properties[k] = "object";
-            }
-                    else if (propTypes.All(t => !CheckPrimitive(t)))
-            {
-                        var propType = GetMinimumObject(objects.Select(o => o.subClasses.First(t => t.name == string.Join("", o.properties[k].TakeWhile(c => c != '[')))));
-                if (propType.properties.Count == 0)
-                {
-                            obj.properties[k] = "object";
-                }
-                else
-                {
-                    obj.subClasses.Add(propType);
-                            obj.properties[k] = propType.name;
-                        }
-                    }
-                    else
-                    {
-                        obj.properties[k] = GetMinimumObject(propTypes);
-                }
-            }
-            else
-            {
-                    obj.properties.Remove(k);
-                }
-                obj.subClasses.RemoveAll(o => o.name == v);
-            }
-            }
+        foreach ((var propName, var propType) in obj.properties)
+            SimplifyProperty(obj, propName, propType, objects);
 
         #endregion properties
 
         #region sub classes
 
+        // remove from or add to subClass classes in foreach loop causes InvalidOperationException
+        // these lists contains objects to remove or add and refered after the loop
         var removeList = new List<JsonObject>();
         var addList = new List<JsonObject>();
         foreach (var sub in obj.subClasses)
         {
-            if (!objects.All(o => o.subClasses.Contains(sub)))
-            {
-            var types = objects.SelectMany(o => o.subClasses).Where(t => t.name == sub.name);
-                var prop = obj.properties.FirstOrDefault(kt => kt.Value.StartsWith(sub.name)).Key;
-                if (!string.IsNullOrEmpty(prop))
-                {
-            var minimum = GetMinimumObject(types);
-            if (minimum.properties.Count == 0)
-            {
-                foreach (var o in objects)
-                    o.properties[prop] = "object";
-            }
-            else
-            {
-                addList.Add(minimum);
-                foreach (var o in objects)
-                    o.properties[prop] = o.properties[prop].Replace(sub.name, minimum.name);
-            }
-        }
-                removeList.Add(sub);
-            }
-        }
+            // if all objects have the same subClass class, skip
+            if (objects.All(o => o.subClasses.Contains(sub))) continue;
+
+            // here, some objects does not have the subClass class
+            // therefore, the subClass class is removed from the object
+            removeList.Add(sub);
+            
+            var add = SimplifySubclass(obj, sub, objects);
+            if (add is not null) addList.Add(add);
+        } // for each subClass class
 
         foreach (var sub in removeList) obj.subClasses.Remove(sub);
         foreach (var sub in addList)
@@ -248,15 +202,112 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         return obj;
     } // private static JsonObject GetMinimumObject (IEnumerable<JsonObject>)
 
+    private static void SimplifyProperty(JsonObject obj, string propName, string propType, IEnumerable<JsonObject> objects)
+    {
+        // if all objects have the same property with the same type, skip
+        if (objects.All(o => o.properties.TryGetValue(propName, out var t) && t == propType)) return;
+
+        // remove subClass classes that have the same name as the property type
+        // because the property type is changed to the minimum type
+        obj.subClasses.RemoveAll(o => o.name == propType);
+
+        if (!objects.All(o => o.properties.ContainsKey(propName)))
+        {
+            // if any other object does not have the property, just remove the property
+            obj.properties.Remove(propName);
+            return;
+        }
+
+        var propTypes = objects.Select(o => o.properties[propName]);
+        var arrayDepth = propTypes.Select(t => t.Split("[").Length);
+        var depth = new HashSet<int>(arrayDepth);
+        if (depth.Count > 1)
+        {
+            /*
+             * some classes have array properties with different depths
+             * e.g., some have "int[]" and others have "int[][]"
+             * in this case, the common type is "object"
+             */
+            obj.properties[propName] = "object";
+            return;
+        }
+
+        if (propTypes.Any(t => CheckPrimitive(t)))
+        {
+            // if any object has a primitive property, the property type is changed to the minimum type of the property
+            obj.properties[propName] = GetMinimumObject(propTypes);
+            return;
+        }
+
+        static string GetArrayElementTypeName(string typeName) => typeName.Split('[')[0];
+        var propObj = GetMinimumObject(
+            objects.Select(
+                o => o.subClasses.First(
+                    t => t.name == GetArrayElementTypeName(o.properties[propName])
+                )
+            )
+        );
+        if (propObj.properties.Count == 0)
+        {
+            // if the common type has no property, the type is "object"
+            // because further analysis is impossible
+            obj.properties[propName] = "object";
+        }
+        else
+        {
+            // the property type is replaced with the minimum type other than "object"
+            obj.subClasses.Add(propObj);
+            obj.properties[propName] = propObj.name;
+        }
+
+        return;
+    } // private static void SimplifyProperty (JsonObject, string, string, IEnumerable<JsonObject>)
+
+    private static JsonObject? SimplifySubclass(JsonObject obj, JsonObject subClass, IEnumerable<JsonObject> objects)
+    {
+        var prop = obj.properties.FirstOrDefault(kt => kt.Value.StartsWith(subClass.name)).Key;
+        if (string.IsNullOrEmpty(prop)) return null;
+
+        var types = objects.SelectMany(o => o.subClasses).Where(t => t.name == subClass.name);
+        var minimum = GetMinimumObject(types);
+        if (minimum.properties.Count == 0)
+        {
+            // the minimum object has no property, i.e., the type is "object"
+            foreach (var o in objects)
+                o.properties[prop] = "object";
+
+            return null;
+        }
+        else
+        {
+            // do NOT simply replace the type with the minimum type
+            // because the property type may be an array
+            // e.g., "int[]" must not be changed to "object" but "object[]"
+            foreach (var o in objects)
+                o.properties[prop] = o.properties[prop].Replace(subClass.name, minimum.name);
+
+            return minimum;
+        }
+    } // private static JsonObject? SimplifySubclass (JsonObject, JsonObject, IEnumerable<JsonObject>)
+
     private static string GetMinimumObject(IEnumerable<object> objects)
     {
         if (objects.Contains("object")) return "object";
 
         if (objects.OfType<JsonObject>().Any()) return "object";
 
-        if (objects.Contains("float")) return "float";
-        if (objects.Contains("long")) return "long";
+        bool CheckPrimitive(params string[] typeNames)
+            => objects.All(o => o is string s && typeNames.Contains(s));
 
+        // long and int can be safely converted to float
+        // and int can be safely converted to long
+        if (CheckPrimitive("float", "long", "int")) return "float";
+        if (CheckPrimitive("long", "int")) return "long";
+        if (CheckPrimitive("int")) return "int";
+
+        if (CheckPrimitive("string")) return "string";
+
+        // all types can be converted to "object"
         return "object";
     } // private static string GetMinimumObject (IEnumerable<object>)
 
