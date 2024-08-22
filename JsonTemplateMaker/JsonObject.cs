@@ -7,8 +7,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using PlainJson = System.Collections.Generic.Dictionary<string, object>;
 
-namespace JsonTemplateMaker
-{
+namespace JsonTemplateMaker;
+
     [DebuggerDisplay("TypeName = {name}")]
     internal class JsonObject : IEqualityComparer<JsonObject>
     {
@@ -382,4 +382,3 @@ namespace JsonTemplateMaker
         public int GetHashCode(JsonObject obj)
             => obj.GetHashCode();
     } // internal class JsonObject : IEqualityComparer<JsonObject>
-} // namespace JsonTemplateMaker

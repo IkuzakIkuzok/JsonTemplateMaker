@@ -1,8 +1,8 @@
 ﻿
 // (c) 2022 Kazuki KOHZUKI
 
-namespace JsonTemplateMaker
-{
+namespace JsonTemplateMaker;
+
     internal static class IterHelper
     {
         internal static IEnumerable<(TKey, TValue)> Items<TKey, TValue>(this IDictionary<TKey, TValue> dictionary)
@@ -11,4 +11,3 @@ namespace JsonTemplateMaker
                 yield return (key, dictionary[key]);
         } // internal static IEnumerable<(TKey, TValue)> Items<TKey, TValue> (this IDictionary<TKey, TValue>)
     } // internal static class IterHelper
-} // namespace JsonTemplateMaker

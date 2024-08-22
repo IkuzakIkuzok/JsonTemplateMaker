@@ -8,8 +8,8 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace JsonTemplateMaker
-{
+namespace JsonTemplateMaker;
+
     [DesignerCategory("Code")]
     internal sealed class MainForm : Form
     {
@@ -307,4 +307,3 @@ namespace JsonTemplateMaker
             }
         } // private void SaveCSFile (object?, EventArgs)
     } // internal sealed class MainForm : Form
-} // namespace JsonTemplateMaker

@@ -4,8 +4,8 @@
 using System.ComponentModel;
 using Timer = System.Windows.Forms.Timer;
 
-namespace JsonTemplateMaker
-{
+namespace JsonTemplateMaker;
+
     [DesignerCategory("Code")]
     internal class AdvancedTextBox : TextBox
     {
@@ -74,4 +74,3 @@ namespace JsonTemplateMaker
             base.Dispose(disposing);
         } // override protected void Dispose (bool)
     } // internal class AdvancedTextBox : TextBox
-} // namespace JsonTemplateMaker
