@@ -1,5 +1,5 @@
 ﻿
-// (c) 2022 Kazuki KOHZUKI
+// (c) 2022-2024 Kazuki KOHZUKI
 
 using JsonTemplateMaker.Properties;
 using System.ComponentModel;
@@ -10,20 +10,25 @@ using System.Text.RegularExpressions;
 namespace JsonTemplateMaker;
 
 [DesignerCategory("Code")]
-internal sealed class MainForm : Form
+internal sealed partial class MainForm : Form
 {
     private const string PLACEHOLDER = @"{
 	""key"": ""value""
 }
 ";
-    private static readonly string dstPlaceholder = new JsonObject(PLACEHOLDER, "Namespace", "ClassName").ToString();
+
+    private const string NAMESPACE = "Namespace";
+    private const string CLASSNAME = "ClassName";
+
+    private static string dstPlaceholder = string.Empty;
 
     private readonly SplitContainer container;
     private readonly AdvancedTextBox ns, source;
     private readonly TextBox destination;
     private readonly ToolStripMenuItem tabWidthSelector;
+    private readonly ToolStripMenuItem fileScopedNamespace, nullable, documentationComment, endOfBlockComment;
 
-    private static readonly Regex re_identifier = new(@"^[_a-zA-Z][_a-zA-Z0-9]*");
+    private static readonly Regex re_identifier = RegexIdentifier();
 
     private int tabWidth = 4;
 
@@ -37,6 +42,14 @@ internal sealed class MainForm : Form
     private static readonly PrivateFontCollection pfc;
     private static int pfc_counter = 0;
     internal static readonly Font Migu1M_9;
+
+    private CSharpOutputOptions CSharpOutputOptions => new()
+    {
+        FileScopedNamespaces = this.fileScopedNamespace.Checked,
+        Nullable = this.nullable.Checked,
+        DocumentationComment = this.documentationComment.Checked,
+        EndOfBlockComment = this.endOfBlockComment.Checked,
+    };
 
     private static Font LoadFont(byte[] fontBuf, float size)
     {
@@ -193,6 +206,50 @@ internal sealed class MainForm : Form
 
         #endregion menu.view
 
+        #region menu.C#
+
+        var csharp = new ToolStripMenuItem()
+        {
+            Text = "&C#",
+        };
+        ms.Items.Add(csharp);
+
+        var defaultOptions = new CSharpOutputOptions();
+
+        this.fileScopedNamespace = new()
+        {
+            Text = "&File-scoped namespace",
+            Checked = defaultOptions.FileScopedNamespaces,
+        };
+        this.fileScopedNamespace.Click += ToggleCSharpOption;
+        csharp.DropDownItems.Add(this.fileScopedNamespace);
+
+        this.nullable = new()
+        {
+            Text = "&Nullable",
+            Checked = defaultOptions.Nullable,
+        };
+        this.nullable.Click += ToggleCSharpOption;
+        csharp.DropDownItems.Add(this.nullable);
+
+        this.documentationComment = new()
+        {
+            Text = "&Documentation comment",
+            Checked = defaultOptions.DocumentationComment,
+        };
+        this.documentationComment.Click += ToggleCSharpOption;
+        csharp.DropDownItems.Add(this.documentationComment);
+
+        this.endOfBlockComment = new()
+        {
+            Text = "End of block &comment",
+            Checked = defaultOptions.EndOfBlockComment,
+        };
+        this.endOfBlockComment.Click += ToggleCSharpOption;
+        csharp.DropDownItems.Add(this.endOfBlockComment);
+
+        #endregion menu.C#
+
         #endregion menu
 
         SetTabWidth(this.tabWidth);
@@ -203,9 +260,14 @@ internal sealed class MainForm : Form
         this.container.SplitterDistance = this.Width / 2;
     } // ctor ()
 
-    private void UpdateResult(object? sender, EventArgs e)
+    private void UpdateResult()
     {
-        if (this.ns.TextLength * this.source.TextLength == 0) return;
+        if (this.ns.TextLength == 0) return;
+        if (this.source.TextLength == 0)
+        {
+            this.destination.Text = string.Empty;
+            return;
+        }
 
         try
         {
@@ -218,13 +280,23 @@ internal sealed class MainForm : Form
             var src = this.source.Text;
             var json = new JsonObject(src, ns, name);
 
-            this.destination.Text = json.ToString();
+            this.destination.Text = json.ToString(this.CSharpOutputOptions);
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            this.destination.Text = ex.ToString();
+            this.destination.Text = e.ToString();
         }
-    } // private void UpdateResult (object?, EventArgs)
+    } // private void UpdateResult ()
+
+    private void UpdateResult(object? sender, EventArgs e)
+        => UpdateResult();
+
+    private void UpdatePlaceholder()
+    {
+        this.source.PlaceholderText = PLACEHOLDER.Replace("\t", new(' ', this.tabWidth));
+        dstPlaceholder = new JsonObject(PLACEHOLDER, NAMESPACE, CLASSNAME).ToString(this.CSharpOutputOptions);
+        this.destination.PlaceholderText = dstPlaceholder.Replace("\t", new(' ', this.tabWidth));
+    } // private void UpdatePlaceholder ()
 
     private void SetTabWidth(object? sender, EventArgs e)
     {
@@ -244,8 +316,7 @@ internal sealed class MainForm : Form
         foreach (ToolStripMenuItem item in this.tabWidthSelector.DropDownItems)
             item.Checked = item.Tag is int w && w == this.tabWidth;
 
-        this.source.PlaceholderText = PLACEHOLDER.Replace("\t", new String(' ', this.tabWidth));
-        this.destination.PlaceholderText = dstPlaceholder.Replace("\t", new String(' ', this.tabWidth));
+        UpdatePlaceholder();
     } // private void SetTabWidth (int)
 
     private void SetFont(object? sender, EventArgs e)
@@ -265,6 +336,14 @@ internal sealed class MainForm : Form
         if (fd.ShowDialog() != DialogResult.OK) return;
         this.ns.Font = this.source.Font = this.destination.Font = fd.Font;
     } // private void SetFont (object?, EventArgs)
+
+    private void ToggleCSharpOption(object? sender, EventArgs e)
+    {
+        if (sender is not ToolStripMenuItem item) return;
+        item.Checked = !item.Checked;
+        UpdateResult();
+        UpdatePlaceholder();
+    } // private void ToggleCSharpOption (object?, EventArgs)
 
     private void LoadJsonFile(object? sender, EventArgs e)
     {
@@ -306,4 +385,7 @@ internal sealed class MainForm : Form
             MessageBox.Show(ex.Message);
         }
     } // private void SaveCSFile (object?, EventArgs)
-} // internal sealed class MainForm : Form
+
+    [GeneratedRegex(@"^[_a-zA-Z][_a-zA-Z0-9]*")]
+    private static partial Regex RegexIdentifier();
+} // internal sealed partial class MainForm : Form

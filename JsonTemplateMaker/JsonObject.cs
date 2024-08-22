@@ -1,5 +1,5 @@
 ﻿
-// (c) 2022 Kazuki KOHZUKI
+// (c) 2022-2024 Kazuki KOHZUKI
 
 using System.Diagnostics;
 using System.Text;
@@ -10,9 +10,10 @@ using PlainJson = System.Collections.Generic.Dictionary<string, object>;
 namespace JsonTemplateMaker;
 
 [DebuggerDisplay("TypeName = {name}")]
-internal class JsonObject : IEqualityComparer<JsonObject>
+internal partial class JsonObject : IEqualityComparer<JsonObject>
 {
-    private static readonly Regex re_separator = new(@"[^a-zA-Z0-9]+[a-zA-Z0-9]");
+    private static readonly Regex re_separator = RegexSeparator();
+    private static readonly Regex re_digits = RegexDigits();
 
     private readonly Dictionary<string, string> properties = [];
     private readonly List<JsonObject> subClasses = [];
@@ -47,104 +48,41 @@ internal class JsonObject : IEqualityComparer<JsonObject>
         var element = (JsonElement)value;
         if (element.ValueKind == JsonValueKind.Number)
         {
-            if (int.TryParse(value.ToString(), out var _)) return "int";
-            if (long.TryParse(value.ToString(), out var _)) return "long";
+            var s = value.ToString();
+            if (int.TryParse(s, out var _)) return "int";
+            if (long.TryParse(s, out var _)) return "long";
             return "float";
         }
         if (element.ValueKind == JsonValueKind.String) return "string";
 
         object[]? array;
         if ((array = GetArray(value)) != null)
-        {
-            if (array.Length > 0)
-            {
-                var types = new HashSet<object>();
-                foreach (var e in array)
-                {
-                    var elementType = GetTypeName(key + "Element", e, out isPrimitive);
-                    if (isPrimitive)
-                    {
-                        types.Add(elementType);
-                    }
-                    else
-                    {
-                        var jsonObj = GetJsonObject(e);
-                        //if (jsonObj != null) types.Add(new JsonObject(jsonObj, this.depth + 1, $"Json{GetPropertyName(key)}ElementObject"));
-                        if (jsonObj != null) types.Add(new JsonObject(jsonObj, this.depth + 1, elementType));
-                        else types.Add(elementType);
-                    }
-                }
-
-                if (types.Count == 1)
-                {
-                    if (isPrimitive) return types.First() + "[]";
-                    else
-                    {
-                        var t = types.First();
-                        if (t is string s) return s + "[]";
-                        return ((JsonObject)t).name + "[]";
-                    }
-                }
-                else
-                {
-                    if (types.All(o => o is JsonObject))
-                    {
-                        var jsonObjects = types.Cast<JsonObject>();
-                        var minimum = GetMinimumObject(jsonObjects);
-
-                        foreach (var registered in jsonObjects)
-                            this.subClasses.Remove(registered);
-
-                        if (minimum.properties.Count == 0)
-                        {
-                            isPrimitive = true;
-                            return "object[]";
-                        }
-
-                        this.subClasses.Add(minimum);
-                        return minimum.name + "[]";
-                    }
-                    else
-                    {
-                        isPrimitive = true;
-                        return GetMinimumObject(types) + "[]";
-                    }
-                }
-            }
-            else
-            {
-                return "object[]";
-            }
-        }
+            return GetArrayTypeName(array, key, out isPrimitive);
 
         PlainJson? obj;
         if ((obj = GetJsonObject(value)) != null)
         {
+            if (obj?.Count == 0) return "object";
+
             isPrimitive = false;
             var type = $"Json{GetPropertyName(key)}Object";
-            if ((obj?.Count ?? 0) == 0)
-                type = "object";
-            else
-            {
-                var subClass = new JsonObject(obj, this.depth + 1, type);
-                var registered = this.subClasses.FirstOrDefault(sc => sc.name == subClass.name);
-                if (registered != default && !registered.Equals(subClass))
-                {
-                    var keys = this.properties.Where(kt => kt.Value == registered.name).Select(kt => kt.Key);
-                    foreach (var k in keys)
-                        this.properties[k] = "object";
+            var subClass = new JsonObject(obj, this.depth + 1, type);
+            var registered = this.subClasses.FirstOrDefault(sc => sc.name == subClass.name);
 
-                    this.subClasses.Remove(registered);
-                    type = "object";
-                }
-                else
-                {
-                    var sameClass = this.subClasses.FirstOrDefault(sc => sc.HasSameMembers(subClass));
-                    if (sameClass != default) type = sameClass.name;
-                    else if (registered == default)
-                        this.subClasses.Add(subClass);
-                }
+            if (registered != default && !registered.Equals(subClass))
+            {
+                var keys = this.properties.Where(kt => kt.Value == registered.name).Select(kt => kt.Key);
+                foreach (var k in keys)
+                    this.properties[k] = "object";
+
+                this.subClasses.Remove(registered);
+                return "object";
             }
+
+            var sameClass = this.subClasses.FirstOrDefault(sc => sc.HasSameMembers(subClass));
+            if (sameClass != default) type = sameClass.name;
+            else if (registered == default)
+                this.subClasses.Add(subClass);
 
             return type;
         }
@@ -158,6 +96,62 @@ internal class JsonObject : IEqualityComparer<JsonObject>
         if (element.ValueKind != JsonValueKind.Array) return null;
         return element.EnumerateArray().Cast<object>().ToArray();
     } // private static object[]? GetArray (object)
+
+    private string GetArrayTypeName(object[] array, string key, out bool isPrimitive)
+    {
+        isPrimitive = true;
+
+        // If the array is empty, it is treated as an object array
+        // because the type of the array cannot be determined.
+        if (array.Length == 0) return "object[]";
+
+        var types = new HashSet<object>();
+        foreach (var e in array)
+        {
+            var elementType = GetTypeName(key + "Element", e, out isPrimitive);
+            if (isPrimitive)
+            {
+                types.Add(elementType);
+            }
+            else
+            {
+                var jsonObj = GetJsonObject(e);
+                //if (jsonObj != null) types.Add(new JsonObject(jsonObj, this.depth + 1, $"Json{GetPropertyName(key)}ElementObject"));
+                if (jsonObj != null) types.Add(new JsonObject(jsonObj, this.depth + 1, elementType));
+                else types.Add(elementType);
+            }
+        }
+
+        if (types.Count == 1)
+        {
+            if (isPrimitive) return types.First() + "[]";
+
+            var t = types.First();
+            if (t is string s) return s + "[]";
+            return ((JsonObject)t).name + "[]";
+        }
+
+        if (types.Any(o => o is not JsonObject))
+        {
+            isPrimitive = true;
+            return GetMinimumObject(types) + "[]";
+        }
+
+        var jsonObjects = types.Cast<JsonObject>();
+        var minimum = GetMinimumObject(jsonObjects);
+
+        foreach (var registered in jsonObjects)
+            this.subClasses.Remove(registered);
+
+        if (minimum.properties.Count == 0)
+        {
+            isPrimitive = true;
+            return "object[]";
+        }
+
+        this.subClasses.Add(minimum);
+        return minimum.name + "[]";
+    } // private string GetArrayTypeName (object[], string, out bool)
 
     private static JsonObject GetMinimumObject(IEnumerable<JsonObject> objects)
     {
@@ -269,7 +263,7 @@ internal class JsonObject : IEqualityComparer<JsonObject>
         if (typeName == "object") return false;
         if (typeName == "string") return false;
         return true;
-    }
+    } // private static bool CheckStruct (string)
 
     private static PlainJson? GetJsonObject(object value)
     {
@@ -285,15 +279,29 @@ internal class JsonObject : IEqualityComparer<JsonObject>
 
     private static string GetPropertyName(string name)
     {
-        var camel = re_separator.Replace(name, s => s.Value.Last().ToString().ToUpper());
-        return string.Concat(camel[0].ToString().ToUpper(), camel.AsSpan(1));
+        name = re_digits.Replace(name, m => $"_{m.Value[1]}");
+        Debug.WriteLine(name);
+        var camel = re_separator.Replace(name, m => m.Value.Last().ToString().ToUpper());
+        var propName = string.Concat(camel[0].ToString().ToUpper(), camel.AsSpan(1));
+
+        if (char.IsDigit(propName[0]))
+            propName = "Prop" + propName;
+
+        return propName;
     } // private static string GetPropertyName (string)
 
     override public string ToString()
-        => ToString($"Represents {this.name}.");
+        => ToString(new());
 
-    private string ToString(string classSummary)
+    internal string ToString(CSharpOutputOptions outputOptions)
+        => ToString($"Represents {this.name}.", outputOptions);
+
+    private string ToString(string classSummary, CSharpOutputOptions outputOptions)
     {
+        var fileScopedNamespace = outputOptions.FileScopedNamespaces;
+        var nullable = outputOptions.Nullable;
+        var docComment = outputOptions.DocumentationComment;
+
         var sb = new StringBuilder();
         if (this.depth == 0)
         {
@@ -310,48 +318,69 @@ internal class JsonObject : IEqualityComparer<JsonObject>
             sb.AppendLine("using System.Text.Json;");
             sb.AppendLine("using System.Text.Json.Serialization;");
             sb.AppendLine();
-            sb.AppendLine($"namespace {this.ns}");
-            sb.AppendLine("{");
+
+            if (fileScopedNamespace)
+            {
+                sb.AppendLine($"namespace {this.ns};");
+                sb.AppendLine();
+            }
+            else
+            {
+                sb.AppendLine($"namespace {this.ns}");
+                sb.AppendLine("{");
+            }
         }
 
-        var indent = new string('\t', this.depth + 1);
+        var indent = new string('\t', this.depth + (fileScopedNamespace ? 0 : 1));
 
-        sb.AppendLine($"{indent}/// <summary>");
-        sb.AppendLine($"{indent}/// {classSummary}");
-        sb.AppendLine($"{indent}/// </summary>");
+        if (docComment)
+        {
+            sb.AppendLine($"{indent}/// <summary>");
+            sb.AppendLine($"{indent}/// {classSummary}");
+            sb.AppendLine($"{indent}/// </summary>");
+        }
         sb.AppendLine($"{indent}public sealed class {this.name}");
         sb.AppendLine($"{indent}{{");
 
         foreach ((var name, var type) in this.properties.Items())
         {
-            sb.AppendLine($"{indent}\t/// <summary>");
-            sb.AppendLine($"{indent}\t/// Gets or sets the {name}.");
-            sb.AppendLine($"{indent}\t/// </summary>");
+            if (docComment)
+            {
+                sb.AppendLine($"{indent}\t/// <summary>");
+                sb.AppendLine($"{indent}\t/// Gets or sets the {name}.");
+                sb.AppendLine($"{indent}\t/// </summary>");
+            }
             sb.AppendLine($"{indent}\t[JsonPropertyName(\"{name}\")]");
 
             var propName = GetPropertyName(name);
-            sb.AppendLine($"{indent}\tpublic {type}{(CheckStruct(type) ? "" : "?")} {propName} {{ get; set; }}");
+            sb.AppendLine($"{indent}\tpublic {type}{(CheckStruct(type) || !nullable ? "" : "?")} {propName} {{ get; set; }}");
             sb.AppendLine();
         }
 
-        sb.AppendLine($"{indent}\t/// <summary>");
-        sb.AppendLine($"{indent}\t/// Initializes a new instance of the <see cref=\"{this.name}\"/> class.");
-        sb.AppendLine($"{indent}\t/// </summary>");
+        if (docComment)
+        {
+            sb.AppendLine($"{indent}\t/// <summary>");
+            sb.AppendLine($"{indent}\t/// Initializes a new instance of the <see cref=\"{this.name}\"/> class.");
+            sb.AppendLine($"{indent}\t/// </summary>");
+        }
         sb.AppendLine($"{indent}\tpublic {this.name}() {{ }}");
 
         if (this.depth == 0)
         {
             sb.AppendLine();
-            sb.AppendLine($"{indent}\t/// <summary>");
-            sb.AppendLine($"{indent}\t/// Creates a new instance of the <see cref=\"{this.name}\"/> class from JSON string.");
-            sb.AppendLine($"{indent}\t/// </summary>");
-            sb.AppendLine($"{indent}\t/// <param name=\"jsonString\">JSON text to parse.</param>");
-            sb.AppendLine($"{indent}\t/// <returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>");
+            if (docComment)
+            {
+                sb.AppendLine($"{indent}\t/// <summary>");
+                sb.AppendLine($"{indent}\t/// Creates a new instance of the <see cref=\"{this.name}\"/> class from JSON string.");
+                sb.AppendLine($"{indent}\t/// </summary>");
+                sb.AppendLine($"{indent}\t/// <param name=\"jsonString\">JSON text to parse.</param>");
+                sb.AppendLine($"{indent}\t/// <returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>");
+            }
             sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(string jsonString)");
             sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(jsonString);");
 
             sb.AppendLine();
-            sb.AppendLine($"{indent}\t/// <inheritdoc/>");
+            if (docComment) sb.AppendLine($"{indent}\t/// <inheritdoc/>");
             sb.AppendLine($"{indent}\tpublic override string ToString()");
             sb.AppendLine($"{indent}\t\t=> JsonSerializer.Serialize(this);");
         }
@@ -365,18 +394,29 @@ internal class JsonObject : IEqualityComparer<JsonObject>
                 : $"Represents a <see cref=\"{prop}\"/>.";
 
             sb.AppendLine();
-            sb.AppendLine(sub.ToString(summary));
+            sb.AppendLine(sub.ToString(summary, outputOptions));
         }
 
+        // end of class
         sb.Append($"{indent}}}");
+        if (outputOptions.EndOfBlockComment)
+            sb.Append($" // end of class {this.name}");
 
         if (this.depth == 0)
         {
+            // end of namespace
             sb.AppendLine();
-            sb.AppendLine("}");
+            if (!fileScopedNamespace)
+            {
+                if (outputOptions.EndOfBlockComment)
+                    sb.Append($" // end of namespace {this.ns}");
+                else
+                    sb.AppendLine("}");
+            }
         }
+
         return sb.ToString();
-    } // private string ToString (string)
+    } // private string ToString (string, CSharpOutputOptions)
 
     override public bool Equals(object? obj)
     {
@@ -416,4 +456,10 @@ internal class JsonObject : IEqualityComparer<JsonObject>
 
     public int GetHashCode(JsonObject obj)
         => obj.GetHashCode();
-} // internal class JsonObject : IEqualityComparer<JsonObject>
+
+    [GeneratedRegex(@"[^a-zA-Z0-9_]+[a-zA-Z0-9]", RegexOptions.Compiled)]
+    private static partial Regex RegexSeparator();
+
+    [GeneratedRegex(@"(?<=\d)[^a-zA-Z0-9](\d)", RegexOptions.Compiled)]
+    private static partial Regex RegexDigits();
+} // internal partial class JsonObject : IEqualityComparer<JsonObject>
