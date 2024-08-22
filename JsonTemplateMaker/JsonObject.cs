@@ -25,30 +25,33 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
     private readonly int depth;
     private readonly string ns = string.Empty, name;
 
-    internal JsonObject(string json, string ns, string className, JsonSerializerOptions serializerOptions)
-        : this(JsonSerializer.Deserialize<PlainJson>(json, serializerOptions), 0, className)
+    internal JsonObject(string json, string ns, string className, JsonSerializerOptions serializerOptions, CancellationToken cancellationToken = default)
+        : this(JsonSerializer.Deserialize<PlainJson>(json, serializerOptions), 0, className, cancellationToken)
     {
         this.ns = ns;
-    } // ctor (string, string, string, JsonSerializerOptions)
+    } // ctor (string, string, string, JsonSerializerOptions, [CancellationToken])
 
-    private JsonObject(PlainJson? json, int depth, string className)
+    private JsonObject(PlainJson? json, int depth, string className, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         this.depth = depth;
         this.name = className;
         if (json == null) return;
 
         foreach ((var key, var value) in json.Items())
-            RegisterProperty(key, value);
-    } // private JsonObject (PlainJson?, int, string)
+            RegisterProperty(key, value, cancellationToken);
+    } // private JsonObject (PlainJson?, int, string, CancellationToken)
 
-    private void RegisterProperty(string key, object value)
+    private void RegisterProperty(string key, object value, CancellationToken cancellationToken)
     {
-        var type = GetTypeName(key, value, out var _);
+        var type = GetTypeName(key, value, out var _, cancellationToken);
         this.properties.Add(key, type);
-    } // private void RegisterProperty (string, object)
+    } // private void RegisterProperty (string, object, CancellationToken)
 
-    private string GetTypeName(string key, object value, out bool isPrimitive)
+    private string GetTypeName(string key, object value, out bool isPrimitive, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // primitive
         isPrimitive = true;
         var element = (JsonElement)value;
@@ -63,7 +66,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
 
         // array
         if (TryGetArray(value, out var array))
-            return GetArrayTypeName(array, key, out isPrimitive);
+            return GetArrayTypeName(array, key, out isPrimitive, cancellationToken);
 
         // unknown
         if (!TryGetJsonObject(value, out var obj)) return "object";
@@ -72,7 +75,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         // other object
         isPrimitive = false;
         var type = $"Json{GetPropertyName(key)}Object";
-        var subClass = new JsonObject(obj, this.depth + 1, type);
+        var subClass = new JsonObject(obj, this.depth + 1, type, cancellationToken);
         var registered = this.subClasses.FirstOrDefault(sc => sc.name == subClass.name);
 
         if (registered != default && !registered.Equals(subClass))
@@ -94,7 +97,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             this.subClasses.Add(subClass);
 
         return type;
-    } // private string GetTypeName (object, out bool)
+    } // private string GetTypeName (object, out bool, CancellationToken)
 
     #region array
 
@@ -111,8 +114,10 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         return array is not null;
     } // private static bool TryGetArray (object, out object[]?)
 
-    private string GetArrayTypeName(object[] array, string key, out bool isPrimitive)
+    private string GetArrayTypeName(object[] array, string key, out bool isPrimitive, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         isPrimitive = true;
 
         // If the array is empty, it is treated as an object array
@@ -122,11 +127,12 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         var types = new HashSet<object>();
         foreach (var e in array)
         {
-            var elementType = GetTypeName(key + "Element", e, out isPrimitive);
+            cancellationToken.ThrowIfCancellationRequested();
+            var elementType = GetTypeName(key + "Element", e, out isPrimitive, cancellationToken);
             if (isPrimitive || !TryGetJsonObject(e, out var jsonObj))
                 types.Add(elementType);
             else
-                types.Add(new JsonObject(jsonObj, this.depth + 1, elementType));
+                types.Add(new JsonObject(jsonObj, this.depth + 1, elementType, cancellationToken));
         }
 
         if (types.Count == 1)
@@ -145,7 +151,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
 
         var jsonObjects = types.Cast<JsonObject>();
-        var minimum = GetMinimumObject(jsonObjects);
+        var minimum = GetMinimumObject(jsonObjects, cancellationToken);
 
         foreach (var registered in jsonObjects)
             this.subClasses.Remove(registered);
@@ -158,12 +164,14 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
 
         this.subClasses.Add(minimum);
         return minimum.name + "[]";
-    } // private string GetArrayTypeName (object[], string, out bool)
+    } // private string GetArrayTypeName (object[], string, out bool, CancellationToken)
 
     #endregion array
 
-    private static JsonObject GetMinimumObject(IEnumerable<JsonObject> objects)
+    private static JsonObject GetMinimumObject(IEnumerable<JsonObject> objects, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         Debug.Assert(objects.Any());
 
         var obj = objects.First();
@@ -171,7 +179,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         #region properties
 
         foreach ((var propName, var propType) in obj.properties)
-            SimplifyProperty(obj, propName, propType, objects);
+            SimplifyProperty(obj, propName, propType, objects, cancellationToken);
 
         #endregion properties
 
@@ -183,6 +191,8 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         var addList = new List<JsonObject>();
         foreach (var sub in obj.subClasses)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // if all objects have the same subClass class, skip
             if (objects.All(o => o.subClasses.Contains(sub))) continue;
 
@@ -190,7 +200,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             // therefore, the subClass class is removed from the object
             removeList.Add(sub);
             
-            var add = SimplifySubclass(obj, sub, objects);
+            var add = SimplifySubclass(obj, sub, objects, cancellationToken);
             if (add is not null) addList.Add(add);
         } // for each subClass class
 
@@ -204,10 +214,12 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         #endregion sub classes
 
         return obj;
-    } // private static JsonObject GetMinimumObject (IEnumerable<JsonObject>)
+    } // private static JsonObject GetMinimumObject (IEnumerable<JsonObject>, CancellationToken)
 
-    private static void SimplifyProperty(JsonObject obj, string propName, string propType, IEnumerable<JsonObject> objects)
+    private static void SimplifyProperty(JsonObject obj, string propName, string propType, IEnumerable<JsonObject> objects, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // if all objects have the same property with the same type, skip
         if (objects.All(o => o.properties.TryGetValue(propName, out var t) && t == propType)) return;
 
@@ -249,7 +261,8 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
                 o => o.subClasses.First(
                     t => t.name == GetArrayElementTypeName(o.properties[propName])
                 )
-            )
+            ),
+            cancellationToken
         );
         if (propObj.properties.Count == 0)
         {
@@ -267,13 +280,15 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         return;
     } // private static void SimplifyProperty (JsonObject, string, string, IEnumerable<JsonObject>)
 
-    private static JsonObject? SimplifySubclass(JsonObject obj, JsonObject subClass, IEnumerable<JsonObject> objects)
+    private static JsonObject? SimplifySubclass(JsonObject obj, JsonObject subClass, IEnumerable<JsonObject> objects, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var prop = obj.properties.FirstOrDefault(kt => kt.Value.StartsWith(subClass.name)).Key;
         if (string.IsNullOrEmpty(prop)) return null;
 
         var types = objects.SelectMany(o => o.subClasses).Where(t => t.name == subClass.name);
-        var minimum = GetMinimumObject(types);
+        var minimum = GetMinimumObject(types, cancellationToken);
         if (minimum.properties.Count == 0)
         {
             // the minimum object has no property, i.e., the type is "object"
@@ -292,7 +307,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
 
             return minimum;
         }
-    } // private static JsonObject? SimplifySubclass (JsonObject, JsonObject, IEnumerable<JsonObject>)
+    } // private static JsonObject? SimplifySubclass (JsonObject, JsonObject, IEnumerable<JsonObject>, CancellationToken)
 
     private static string GetMinimumObject(IEnumerable<object> objects)
     {
@@ -362,10 +377,10 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
     override public string ToString()
         => ToString(new());
 
-    internal string ToString(CSharpOutputOptions outputOptions, CancellationToken? cancellationToken = default)
+    internal string ToString(CSharpOutputOptions outputOptions, CancellationToken cancellationToken = default)
         => ToString($"Represents {this.name}.", outputOptions, cancellationToken);
 
-    private string ToString(string classSummary, CSharpOutputOptions outputOptions, CancellationToken? cancellationToken)
+    private string ToString(string classSummary, CSharpOutputOptions outputOptions, CancellationToken cancellationToken)
     {
         var fileScopedNamespace = outputOptions.FileScopedNamespaces;
         var nullable = outputOptions.Nullable;
@@ -424,10 +439,10 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             }
         }
 
-        cancellationToken?.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
 
         return sb.ToString();
-    } // private string ToString (string, CSharpOutputOptions, CancellationToken?)
+    } // private string ToString (string, CSharpOutputOptions, CancellationToken)
 
     #region ToString.sub
 
@@ -459,11 +474,11 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
     } // private void WriteHeader (StringBuilder, bool)
 
-    private void WriteProperties(StringBuilder sb, string indent, bool nullable, bool docComment, string numberFlags, CancellationToken? cancellationToken)
+    private void WriteProperties(StringBuilder sb, string indent, bool nullable, bool docComment, string numberFlags, CancellationToken cancellationToken)
     {
         foreach ((var name, var type) in this.properties.Items())
         {
-            cancellationToken?.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (docComment)
             {
@@ -480,7 +495,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             sb.AppendLine($"{indent}\tpublic {type}{(CheckStruct(type) || !nullable ? "" : "?")} {propName} {{ get; set; }}");
             sb.AppendLine();
         }
-    } // private void WriteProperties (StringBuilder, string, bool, bool, string, CancellationToken?)
+    } // private void WriteProperties (StringBuilder, string, bool, bool, string, CancellationToken)
 
     private void WriteTopClassMembers(StringBuilder sb, string indent, bool docComment)
     {
@@ -502,11 +517,11 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         sb.AppendLine($"{indent}\t\t=> JsonSerializer.Serialize(this);");
     } // private void WriteTopClassMembers (StringBuilder, string, bool)
 
-    private void WriteSubClasses(StringBuilder sb, CSharpOutputOptions outputOptions, CancellationToken? cancellationToken)
+    private void WriteSubClasses(StringBuilder sb, CSharpOutputOptions outputOptions, CancellationToken cancellationToken)
     {
         foreach (var sub in this.subClasses)
         {
-            cancellationToken?.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
             var prop = GetPropertyName(this.properties.First(kt => kt.Value.StartsWith(sub.name)).Key);
 
@@ -517,7 +532,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             sb.AppendLine();
             sb.AppendLine(sub.ToString(summary, outputOptions, cancellationToken));
         }
-    } // private void WriteSubClasses (StringBuilder, string, CancellationToken?)
+    } // private void WriteSubClasses (StringBuilder, string, CancellationToken)
 
     #endregion ToString.sub
 

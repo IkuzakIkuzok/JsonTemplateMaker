@@ -403,7 +403,7 @@ internal sealed partial class MainForm : Form
         var dst = await Task.Run(() => {
             try
             {
-                var json = new JsonObject(source, @namespace, name, this.JsonSerializerOptions);
+                var json = new JsonObject(source, @namespace, name, this.JsonSerializerOptions, cancellationTokenSource.Token);
                 return json.ToString(this.CSharpOutputOptions, cancellationTokenSource.Token);
             }
             catch (OperationCanceledException)
