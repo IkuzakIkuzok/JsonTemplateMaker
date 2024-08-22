@@ -2,6 +2,7 @@
 // (c) 2022-2024 Kazuki KOHZUKI
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -44,6 +45,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
 
     private string GetTypeName(string key, object value, out bool isPrimitive)
     {
+        // primitive
         isPrimitive = true;
         var element = (JsonElement)value;
         if (element.ValueKind == JsonValueKind.Number)
@@ -55,40 +57,42 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
         if (element.ValueKind == JsonValueKind.String) return "string";
 
-        object[]? array;
-        if ((array = GetArray(value)) != null)
+        // array
+        if (TryGetArray(value, out var array))
             return GetArrayTypeName(array, key, out isPrimitive);
 
-        PlainJson? obj;
-        if ((obj = GetJsonObject(value)) != null)
+        // unknown
+        if (!TryGetJsonObject(value, out var obj)) return "object";
+        if (obj.Count == 0) return "object";
+
+        // other object
+        isPrimitive = false;
+        var type = $"Json{GetPropertyName(key)}Object";
+        var subClass = new JsonObject(obj, this.depth + 1, type);
+        var registered = this.subClasses.FirstOrDefault(sc => sc.name == subClass.name);
+
+        if (registered != default && !registered.Equals(subClass))
         {
-            if (obj?.Count == 0) return "object";
+            var keys =
+                this.properties.Where(kt => kt.Value == registered.name)
+                               .Select(kt => kt.Key);
 
-            isPrimitive = false;
-            var type = $"Json{GetPropertyName(key)}Object";
-            var subClass = new JsonObject(obj, this.depth + 1, type);
-            var registered = this.subClasses.FirstOrDefault(sc => sc.name == subClass.name);
+            foreach (var k in keys)
+                this.properties[k] = "object";
 
-            if (registered != default && !registered.Equals(subClass))
-            {
-                var keys = this.properties.Where(kt => kt.Value == registered.name).Select(kt => kt.Key);
-                foreach (var k in keys)
-                    this.properties[k] = "object";
-
-                this.subClasses.Remove(registered);
-                return "object";
-            }
-
-            var sameClass = this.subClasses.FirstOrDefault(sc => sc.HasSameMembers(subClass));
-            if (sameClass != default) type = sameClass.name;
-            else if (registered == default)
-                this.subClasses.Add(subClass);
-
-            return type;
+            this.subClasses.Remove(registered);
+            return "object";
         }
-        
-        return "object";
+
+        var sameClass = this.subClasses.FirstOrDefault(sc => sc.HasSameMembers(subClass));
+        if (sameClass != default) type = sameClass.name;
+        else if (registered == default)
+            this.subClasses.Add(subClass);
+
+        return type;
     } // private string GetTypeName (object, out bool)
+
+    #region array
 
     private static object[]? GetArray(object value)
     {
@@ -96,6 +100,12 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         if (element.ValueKind != JsonValueKind.Array) return null;
         return element.EnumerateArray().Cast<object>().ToArray();
     } // private static object[]? GetArray (object)
+
+    private static bool TryGetArray(object value, [NotNullWhen(true)] out object[]? array)
+    {
+        array = GetArray(value);
+        return array is not null;
+    } // private static bool TryGetArray (object, out object[]?)
 
     private string GetArrayTypeName(object[] array, string key, out bool isPrimitive)
     {
@@ -109,17 +119,10 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         foreach (var e in array)
         {
             var elementType = GetTypeName(key + "Element", e, out isPrimitive);
-            if (isPrimitive)
-            {
+            if (isPrimitive || !TryGetJsonObject(e, out var jsonObj))
                 types.Add(elementType);
-            }
             else
-            {
-                var jsonObj = GetJsonObject(e);
-                //if (jsonObj != null) types.Add(new JsonObject(jsonObj, this.depth + 1, $"Json{GetPropertyName(key)}ElementObject"));
-                if (jsonObj != null) types.Add(new JsonObject(jsonObj, this.depth + 1, elementType));
-                else types.Add(elementType);
-            }
+                types.Add(new JsonObject(jsonObj, this.depth + 1, elementType));
         }
 
         if (types.Count == 1)
@@ -153,8 +156,12 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         return minimum.name + "[]";
     } // private string GetArrayTypeName (object[], string, out bool)
 
+    #endregion array
+
     private static JsonObject GetMinimumObject(IEnumerable<JsonObject> objects)
     {
+        Debug.Assert(objects.Any());
+
         var obj = objects.First();
 
         #region properties
@@ -166,37 +173,37 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
                 if (objects.All(o => o.properties.TryGetValue(k, out var _)))
                 {
                     var propTypes = objects.Select(o => o.properties[k]);
-                    var arrayDepth = propTypes.Select(t => t.Split("[").Length);
-                    var depth = new HashSet<int>(arrayDepth);
-                    if (depth.Count > 1)
-                    {
+            var arrayDepth = propTypes.Select(t => t.Split("[").Length);
+            var depth = new HashSet<int>(arrayDepth);
+            if (depth.Count > 1)
+            {
                         obj.properties[k] = "object";
-                    }
+            }
                     else if (propTypes.All(t => !CheckPrimitive(t)))
-                    {
+            {
                         var propType = GetMinimumObject(objects.Select(o => o.subClasses.First(t => t.name == string.Join("", o.properties[k].TakeWhile(c => c != '[')))));
-                        if (propType.properties.Count == 0)
-                        {
+                if (propType.properties.Count == 0)
+                {
                             obj.properties[k] = "object";
-                        }
-                        else
-                        {
-                            obj.subClasses.Add(propType);
+                }
+                else
+                {
+                    obj.subClasses.Add(propType);
                             obj.properties[k] = propType.name;
                         }
                     }
                     else
                     {
                         obj.properties[k] = GetMinimumObject(propTypes);
-                    }
                 }
-                else
-                {
+            }
+            else
+            {
                     obj.properties.Remove(k);
                 }
                 obj.subClasses.RemoveAll(o => o.name == v);
             }
-        }
+            }
 
         #endregion properties
 
@@ -208,23 +215,23 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         {
             if (!objects.All(o => o.subClasses.Contains(sub)))
             {
-                var types = objects.SelectMany(o => o.subClasses).Where(t => t.name == sub.name);
+            var types = objects.SelectMany(o => o.subClasses).Where(t => t.name == sub.name);
                 var prop = obj.properties.FirstOrDefault(kt => kt.Value.StartsWith(sub.name)).Key;
                 if (!string.IsNullOrEmpty(prop))
                 {
-                    var minimum = GetMinimumObject(types);
-                    if (minimum.properties.Count == 0)
-                    {
-                        foreach (var o in objects)
-                            o.properties[prop] = "object";
-                    }
-                    else
-                    {
-                        addList.Add(minimum);
-                        foreach (var o in objects)
-                            o.properties[prop] = o.properties[prop].Replace(sub.name, minimum.name);
-                    }
-                }
+            var minimum = GetMinimumObject(types);
+            if (minimum.properties.Count == 0)
+            {
+                foreach (var o in objects)
+                    o.properties[prop] = "object";
+            }
+            else
+            {
+                addList.Add(minimum);
+                foreach (var o in objects)
+                    o.properties[prop] = o.properties[prop].Replace(sub.name, minimum.name);
+            }
+        }
                 removeList.Add(sub);
             }
         }
@@ -277,10 +284,15 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
     } // private static bool IsJsonObject (object)
 
+    private static bool TryGetJsonObject(object value, [NotNullWhen(true)] out PlainJson? obj)
+    {
+        obj = GetJsonObject(value);
+        return obj is not null;
+    } // private static bool TryGetJsonObject (object, out PlainJson?)
+
     private static string GetPropertyName(string name)
     {
         name = re_digits.Replace(name, m => $"_{m.Value[1]}");
-        Debug.WriteLine(name);
         var camel = re_separator.Replace(name, m => m.Value.Last().ToString().ToUpper());
         var propName = string.Concat(camel[0].ToString().ToUpper(), camel.AsSpan(1));
 
@@ -443,7 +455,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
 
         return true;
-    }
+    } // private bool HasSameMembers (JsonObject)
 
     override public int GetHashCode()
         => base.GetHashCode();
