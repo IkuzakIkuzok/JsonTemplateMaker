@@ -340,8 +340,7 @@ internal sealed partial class MainForm : Form
         SendMessage(this.source.Handle, EM_SETTABSTOPS, 1, [width]);
         SendMessage(this.destination.Handle, EM_SETTABSTOPS, 1, [width]);
 
-        foreach (ToolStripMenuItem item in this.tabWidthSelector.DropDownItems)
-            item.Checked = item.Tag is int w && w == this.tabWidth;
+        this.tabWidthSelector.SetChecked(this.tabWidth);
 
         UpdatePlaceholder();
     } // private void SetTabWidth (int)
