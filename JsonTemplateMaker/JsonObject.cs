@@ -392,12 +392,11 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
 
         var indent = new string('\t', this.depth + (fileScopedNamespace ? 0 : 1));
 
-        if (docComment)
-        {
-            sb.AppendLine($"{indent}/// <summary>");
-            sb.AppendLine($"{indent}/// {classSummary}");
-            sb.AppendLine($"{indent}/// </summary>");
-        }
+        sb.WriteDocComments(docComment, indent,
+            "<summary>",
+            classSummary,
+            "</summary>"
+        );
         sb.AppendLine($"{indent}public sealed class {this.name}");
         sb.AppendLine($"{indent}{{");
 
@@ -408,12 +407,11 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         WriteProperties(sb, indent, nullable, docComment, numberFlags, cancellationToken);
 
         // constructor
-        if (docComment)
-        {
-            sb.AppendLine($"{indent}\t/// <summary>");
-            sb.AppendLine($"{indent}\t/// Initializes a new instance of the <see cref=\"{this.name}\"/> class.");
-            sb.AppendLine($"{indent}\t/// </summary>");
-        }
+        sb.WriteDocComments(docComment, indent + "\t",
+            $"<summary>",
+            $"Initializes a new instance of the <see cref=\"{this.name}\"/> class.",
+            $"</summary>"
+        );
         sb.AppendLine($"{indent}\tpublic {this.name}() {{ }}");
 
         if (this.depth == 0)
@@ -480,12 +478,11 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (docComment)
-            {
-                sb.AppendLine($"{indent}\t/// <summary>");
-                sb.AppendLine($"{indent}\t/// Gets or sets the {name}.");
-                sb.AppendLine($"{indent}\t/// </summary>");
-            }
+            sb.WriteDocComments(docComment, indent + "\t",
+                $"<summary>",
+                $"Gets or sets the {name}.",
+                $"</summary>"
+            );
             sb.AppendLine($"{indent}\t[JsonPropertyName(\"{name}\")]");
 
             if (number_types.Contains(type) && !string.IsNullOrEmpty(numberFlags))
@@ -500,19 +497,30 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
     private void WriteTopClassMembers(StringBuilder sb, string indent, bool docComment)
     {
         sb.AppendLine();
-        if (docComment)
-        {
-            sb.AppendLine($"{indent}\t/// <summary>");
-            sb.AppendLine($"{indent}\t/// Creates a new instance of the <see cref=\"{this.name}\"/> class from JSON string.");
-            sb.AppendLine($"{indent}\t/// </summary>");
-            sb.AppendLine($"{indent}\t/// <param name=\"jsonString\">JSON text to parse.</param>");
-            sb.AppendLine($"{indent}\t/// <returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>");
-        }
-        sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(string jsonString)");
-        sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(jsonString);");
+
+        sb.WriteDocComments(docComment, indent + "\t",
+            $"<summary>",
+            $"Creates a new instance of the <see cref=\"{this.name}\"/> class from JSON string.",
+            $"</summary>",
+            $"<param name=\"jsonString\">JSON text to parse.</param>",
+            $"<param name=\"options\">Options to control the behavior during parsing.</param>",
+            $"<returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>",
+            $"<exception cref=\"System.ArgumentNullException\">",
+            $"<paramref name=\"jsonString\"/> is <c>null</c>.",
+            $"</exception>",
+            $"<exception cref=\"JsonException\">",
+            $"The JSON is invalid.",
+            $"",
+            $"-or-",
+            $"",
+            $"There is remaining data in the string beyond a single JSON value.",
+            $"</exception>"
+            );
+        sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(string jsonString, JsonSerializerOptions? options = default)");
+        sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(jsonString, options);");
 
         sb.AppendLine();
-        if (docComment) sb.AppendLine($"{indent}\t/// <inheritdoc/>");
+        sb.WriteDocComments(docComment, indent + "\t", "<inheritdoc/>");
         sb.AppendLine($"{indent}\tpublic override string ToString()");
         sb.AppendLine($"{indent}\t\t=> JsonSerializer.Serialize(this);");
     } // private void WriteTopClassMembers (StringBuilder, string, bool)
