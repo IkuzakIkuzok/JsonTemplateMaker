@@ -15,6 +15,8 @@ internal readonly struct CSharpOutputOptions
 
     internal bool EndOfBlockComment { get; init; } = false;
 
+    internal JsonLoaderOptions JsonLoader { get; init; } = new();
+
     internal JsonNumberHandling NumberHandlingAttr { get; init; } = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals;
 
     public CSharpOutputOptions() { }

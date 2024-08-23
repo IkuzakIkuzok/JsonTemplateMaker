@@ -415,7 +415,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         sb.AppendLine($"{indent}\tpublic {this.name}() {{ }}");
 
         if (this.depth == 0)
-            WriteTopClassMembers(sb, indent, docComment);
+            WriteTopClassMembers(sb, indent, docComment, outputOptions.JsonLoader);
 
         WriteSubClasses(sb, outputOptions, cancellationToken);
 
@@ -494,30 +494,76 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         }
     } // private void WriteProperties (StringBuilder, string, bool, bool, string, CancellationToken)
 
-    private void WriteTopClassMembers(StringBuilder sb, string indent, bool docComment)
+    private void WriteTopClassMembers(StringBuilder sb, string indent, bool docComment, JsonLoaderOptions jsonLoaders)
     {
-        sb.AppendLine();
-
-        sb.WriteDocComments(docComment, indent + "\t",
-            $"<summary>",
-            $"Creates a new instance of the <see cref=\"{this.name}\"/> class from JSON string.",
-            $"</summary>",
-            $"<param name=\"jsonString\">JSON text to parse.</param>",
-            $"<param name=\"options\">Options to control the behavior during parsing.</param>",
-            $"<returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>",
-            $"<exception cref=\"System.ArgumentNullException\">",
-            $"<paramref name=\"jsonString\"/> is <c>null</c>.",
-            $"</exception>",
-            $"<exception cref=\"JsonException\">",
-            $"The JSON is invalid.",
-            $"",
-            $"-or-",
-            $"",
-            $"There is remaining data in the string beyond a single JSON value.",
-            $"</exception>"
+        void WriteDocCommentTextLike()
+        {
+            sb.WriteDocComments(docComment, indent + "\t",
+                $"<summary>",
+                $"Creates a new instance of the <see cref=\"{this.name}\"/> class from the JSON text.",
+                $"</summary>",
+                $"<param name=\"json\">JSON text to parse.</param>",
+                $"<param name=\"options\">Options to control the behavior during parsing.</param>",
+                $"<returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>",
+                $"<exception cref=\"System.ArgumentNullException\">",
+                $"<paramref name=\"json\"/> is <c>null</c>.",
+                $"</exception>",
+                $"<exception cref=\"JsonException\">",
+                $"The JSON is invalid.",
+                $"",
+                $"-or-",
+                $"",
+                $"There is remaining data in the string beyond a single JSON value.",
+                $"</exception>"
             );
-        sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(string jsonString, JsonSerializerOptions? options = default)");
-        sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(jsonString, options);");
+        }
+
+        void WriteDocCommentBytesLike()
+        {
+            sb.WriteDocComments(docComment, indent + "\t",
+                $"<summary>",
+                $"Creates a new instance of the <see cref=\"{this.name}\"/> class from the UTF-8 encoded text representing a single JSON value.",
+                $"</summary>",
+                $"<param name=\"utf8Json\">JSON data to parse.</param>",
+                $"<param name=\"options\">Options to control the behavior during reading.</param>",
+                $"<returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>",
+                $"<exception cref=\"System.ArgumentNullException\">",
+                $"<paramref name=\"utf8Json\"/> is <c>null</c>.",
+                $"</exception>",
+                $"<exception cref=\"JsonException\">",
+                $"The JSON is invalid, or there is remaining data in the Stream.",
+                $"</exception>"
+            );
+        }
+
+        if (jsonLoaders.LoadFromString)
+        {
+            sb.AppendLine();
+            WriteDocCommentTextLike();
+            sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(string json, JsonSerializerOptions? options = default)");
+            sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(json, options);");
+        }
+
+        if (jsonLoaders.LoadFromStream)
+        {
+            sb.AppendLine();
+            WriteDocCommentBytesLike();
+            sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(System.IO.Stream utf8Json, JsonSerializerOptions? options = default)");
+            sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(utf8Json, options);");
+        }
+
+        if (jsonLoaders.LoadFromReadOnlySpan)
+        {
+            sb.AppendLine();
+            WriteDocCommentTextLike();
+            sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(ReadOnlySpan<char> json, JsonSerializerOptions? options = default)");
+            sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(json, options);");
+
+            sb.AppendLine();
+            WriteDocCommentBytesLike();
+            sb.AppendLine($"{indent}\tpublic static {this.name}? LoadJson(ReadOnlySpan<byte> utf8Json, JsonSerializerOptions? options = default)");
+            sb.AppendLine($"{indent}\t\t=> JsonSerializer.Deserialize<{this.name}>(utf8Json, options);");
+        }
 
         sb.AppendLine();
         sb.WriteDocComments(docComment, indent + "\t", "<inheritdoc/>");

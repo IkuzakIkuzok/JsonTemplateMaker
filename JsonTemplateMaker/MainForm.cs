@@ -32,6 +32,7 @@ internal sealed partial class MainForm : Form
     private readonly ToolStripMenuItem tabWidthSelector;
     private readonly ToolStripMenuItem allowTrailingCommas, allowComment, maxDepthSelector;
     private readonly ToolStripMenuItem fileScopedNamespace, nullable, documentationComment, endOfBlockComment;
+    private readonly ToolStripMenuItem jsonLoaderString, jsonLoaderStream, jsonLoaderReadOnlySpan;
     private readonly ToolStripMenuItem numberReadFromString, numberNamedFloat, numberWriteAsString;
 
     private static readonly Regex re_identifier = RegexIdentifier();
@@ -62,7 +63,15 @@ internal sealed partial class MainForm : Form
         Nullable = this.nullable.Checked,
         DocumentationComment = this.documentationComment.Checked,
         EndOfBlockComment = this.endOfBlockComment.Checked,
+        JsonLoader = this.JsonLoaderOptions,
         NumberHandlingAttr = this.NumberHandling,
+    };
+
+    private JsonLoaderOptions JsonLoaderOptions => new()
+    {
+        LoadFromString = this.jsonLoaderString.Checked,
+        LoadFromStream = this.jsonLoaderStream.Checked,
+        LoadFromReadOnlySpan = this.jsonLoaderReadOnlySpan.Checked,
     };
 
     private JsonNumberHandling NumberHandling
@@ -325,6 +334,42 @@ internal sealed partial class MainForm : Form
         this.endOfBlockComment.Click += ToggleMenuOption;
         csharp.DropDownItems.Add(this.endOfBlockComment);
 
+        #region menu.C#.jsonLoader
+
+        var jsonLoader = new ToolStripMenuItem()
+        {
+            Text = "&JSON loader methods",
+        };
+        csharp.DropDownItems.Add(jsonLoader);
+
+        this.jsonLoaderString = new()
+        {
+            Text = "Load from string (&T)",
+            Checked = defaultCSOptions.JsonLoader.LoadFromString,
+        };
+        this.jsonLoaderString.Click += ToggleMenuOption;
+        jsonLoader.DropDownItems.Add(this.jsonLoaderString);
+
+        this.jsonLoaderStream = new()
+        {
+            Text = "Load from &stream",
+            Checked = defaultCSOptions.JsonLoader.LoadFromStream,
+        };
+        this.jsonLoaderStream.Click += ToggleMenuOption;
+        jsonLoader.DropDownItems.Add(this.jsonLoaderStream);
+
+        this.jsonLoaderReadOnlySpan = new()
+        {
+            Text = "Load from read-only &span",
+            Checked = defaultCSOptions.JsonLoader.LoadFromReadOnlySpan,
+        };
+        this.jsonLoaderReadOnlySpan.Click += ToggleMenuOption;
+        jsonLoader.DropDownItems.Add(this.jsonLoaderReadOnlySpan);
+
+        #endregion menu.C#.jsonLoader
+
+        #region menu.C#.numberHandling
+
         var numberHandling = new ToolStripMenuItem()
         {
             Text = "&Number handling attributes",
@@ -354,6 +399,8 @@ internal sealed partial class MainForm : Form
         };
         this.numberWriteAsString.Click += ToggleMenuOption;
         numberHandling.DropDownItems.Add(this.numberWriteAsString);
+
+        #endregion menu.C#.numberHandling
 
         #endregion menu.C#
 
