@@ -1,15 +1,20 @@
 ﻿
 // (c) 2022-2024 Kazuki KOHZUKI
 
+using System.Text.Json.Serialization;
+
 namespace JsonTemplateMaker;
 
-internal sealed class JsonLoaderOptions
+public sealed class JsonLoaderOptions
 {
-    internal bool LoadFromString { get; init; } = true;
+    [JsonPropertyName("from-string")]
+    public bool LoadFromString { get; init; } = true;
 
-    internal bool LoadFromStream { get; init; } = false;
+    [JsonPropertyName("from-stream")]
+    public bool LoadFromStream { get; init; } = true;
 
-    internal bool LoadFromReadOnlySpan { get; init; } = false;
+    [JsonPropertyName("from-read-only-span")]
+    public bool LoadFromReadOnlySpan { get; init; } = true;
 
-    internal JsonLoaderOptions() { }
-} // internal sealed class JsonLoaderOptions
+    public JsonLoaderOptions() { }
+} // public sealed class JsonLoaderOptions

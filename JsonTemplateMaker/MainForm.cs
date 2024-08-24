@@ -50,6 +50,24 @@ internal sealed partial class MainForm : Form
     private static int pfc_counter = 0;
     internal static readonly Font Migu1M_9;
 
+    private static readonly CSharpOutputOptions cSharp7 = new()
+    {
+        FileScopedNamespaces = false,
+        Nullable = false,
+        JsonLoader = new()
+        {
+            LoadFromReadOnlySpan = false
+        }
+    };
+
+    private static readonly CSharpOutputOptions cSharp8 = new()
+    {
+        FileScopedNamespaces = false,
+        Nullable = true,
+    };
+
+    private static readonly CSharpOutputOptions cSharp10 = new();
+
     private JsonSerializerOptions JsonSerializerOptions => new()
     {
         AllowTrailingCommas = this.allowTrailingCommas.Checked,
@@ -57,22 +75,45 @@ internal sealed partial class MainForm : Form
         ReadCommentHandling = this.allowComment.Checked ? JsonCommentHandling.Skip : JsonCommentHandling.Disallow,
     };
 
-    private CSharpOutputOptions CSharpOutputOptions => new()
+    private CSharpOutputOptions CSharpOutputOptions
     {
-        FileScopedNamespaces = this.fileScopedNamespace.Checked,
-        Nullable = this.nullable.Checked,
-        DocumentationComment = this.documentationComment.Checked,
-        EndOfBlockComment = this.endOfBlockComment.Checked,
-        JsonLoader = this.JsonLoaderOptions,
-        NumberHandlingAttr = this.NumberHandling,
-    };
+        get => new()
+        {
+            FileScopedNamespaces = this.fileScopedNamespace.Checked,
+            Nullable = this.nullable.Checked,
+            DocumentationComment = this.documentationComment.Checked,
+            EndOfBlockComment = this.endOfBlockComment.Checked,
+            JsonLoader = this.JsonLoaderOptions,
+            NumberHandlingAttr = this.NumberHandling,
+        };
+        set
+        {
+            this.fileScopedNamespace.Checked = value.FileScopedNamespaces;
+            this.nullable.Checked = value.Nullable;
+            this.documentationComment.Checked = value.DocumentationComment;
+            this.endOfBlockComment.Checked = value.EndOfBlockComment;
+            this.JsonLoaderOptions = value.JsonLoader;
+            this.numberReadFromString.Checked = value.NumberHandlingAttr.HasFlag(JsonNumberHandling.AllowReadingFromString);
+            this.numberNamedFloat.Checked = value.NumberHandlingAttr.HasFlag(JsonNumberHandling.AllowNamedFloatingPointLiterals);
+            this.numberWriteAsString.Checked = value.NumberHandlingAttr.HasFlag(JsonNumberHandling.WriteAsString);
+        }
+    }
 
-    private JsonLoaderOptions JsonLoaderOptions => new()
+    private JsonLoaderOptions JsonLoaderOptions
     {
-        LoadFromString = this.jsonLoaderString.Checked,
-        LoadFromStream = this.jsonLoaderStream.Checked,
-        LoadFromReadOnlySpan = this.jsonLoaderReadOnlySpan.Checked,
-    };
+        get => new()
+        {
+            LoadFromString = this.jsonLoaderString.Checked,
+            LoadFromStream = this.jsonLoaderStream.Checked,
+            LoadFromReadOnlySpan = this.jsonLoaderReadOnlySpan.Checked,
+        };
+        set
+        {
+            this.jsonLoaderString.Checked = value.LoadFromString;
+            this.jsonLoaderStream.Checked = value.LoadFromStream;
+            this.jsonLoaderReadOnlySpan.Checked = value.LoadFromReadOnlySpan;
+        }
+    }
 
     private JsonNumberHandling NumberHandling
     {
@@ -402,6 +443,55 @@ internal sealed partial class MainForm : Form
 
         #endregion menu.C#.numberHandling
 
+        csharp.DropDownItems.Add(new ToolStripSeparator());
+
+        var settings = new ToolStripMenuItem()
+        {
+            Text = "&Settings",
+        };
+        csharp.DropDownItems.Add(settings);
+
+
+        var cs7 = new ToolStripMenuItem()
+        {
+            Text = "C# \u2013&7 (.NET Framework, .NET Core \u20132.x)",
+            Tag = cSharp7,
+        };
+        cs7.Click += ApplyPreset;
+        settings.DropDownItems.Add(cs7);
+
+        var cs8 = new ToolStripMenuItem()
+        {
+            Text = "C# &8–9 (.NET Core 3.x\u2013)",
+            Tag = cSharp8,
+        };
+        cs8.Click += ApplyPreset;
+        settings.DropDownItems.Add(cs8);
+
+        var cs10 = new ToolStripMenuItem()
+        {
+            Text = "C# &10\u2013 (.NET 6\u2013)",
+            Tag = cSharp10,
+        };
+        cs10.Click += ApplyPreset;
+        settings.DropDownItems.Add(cs10);
+
+        settings.DropDownItems.Add(new ToolStripSeparator());
+
+        var export = new ToolStripMenuItem()
+        {
+            Text = "&Export",
+        };
+        export.Click += ExportCurrentSetting;
+        settings.DropDownItems.Add(export);
+
+        var import = new ToolStripMenuItem()
+        {
+            Text = "&Import",
+        };
+        import.Click += ImportSettings;
+        settings.DropDownItems.Add(import);
+
         #endregion menu.C#
 
         #endregion menu
@@ -572,6 +662,65 @@ internal sealed partial class MainForm : Form
             MessageBox.Show(ex.Message);
         }
     } // private void SaveCSFile (object?, EventArgs)
+
+    #region C# settings
+
+    private void ApplyPreset(object? sender, EventArgs e)
+    {
+        if (sender is not ToolStripMenuItem item) return;
+        if (item.Tag is not CSharpOutputOptions options) return;
+        this.CSharpOutputOptions = options;
+        UpdateResult();
+    } // private void ApplyPreset (object?, EventArgs)
+
+    private void ExportCurrentSetting(object? sender, EventArgs e)
+        => ExportCurrentSetting();
+
+    private void ExportCurrentSetting()
+        => ExportSettings(this.CSharpOutputOptions);
+
+    private static void ExportSettings(CSharpOutputOptions options)
+    {
+        using var sfd = new SaveFileDialog()
+        {
+            Title = "Export settings",
+            Filter = "JSON files|*.json|All files|*.*",
+        };
+        if (sfd.ShowDialog() != DialogResult.OK) return;
+
+        try
+        {
+            File.WriteAllText(sfd.FileName, options.ToString());
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(e.Message);
+        }
+    } // private static void ExportSettings (CSharpOutputOptions)
+
+    private void ImportSettings(object? sender, EventArgs e)
+        => ImportSettings();
+
+    private void ImportSettings()
+    {
+        using var ofd = new OpenFileDialog()
+        {
+            Title = "Import settings",
+            Filter = "JSON files|*.json|All files|*.*",
+        };
+        if (ofd.ShowDialog() != DialogResult.OK) return;
+
+        try
+        {
+            this.CSharpOutputOptions = CSharpOutputOptions.LoadFromFile(ofd.FileName) ?? new();
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(e.Message);
+        }
+    } // private void ImportSettings ()
+
+    #endregion C# settings
 
     [GeneratedRegex(@"^[_a-zA-Z][_a-zA-Z0-9]*")]
     private static partial Regex RegexIdentifier();

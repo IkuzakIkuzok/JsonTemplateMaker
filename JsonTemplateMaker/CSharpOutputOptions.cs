@@ -1,23 +1,41 @@
 ﻿
 // (c) 2022-2024 Kazuki KOHZUKI
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace JsonTemplateMaker;
 
-internal readonly struct CSharpOutputOptions
+public class CSharpOutputOptions
 {
-    internal bool FileScopedNamespaces { get; init; } = true;
+    private static readonly JsonSerializerOptions _options = new() { WriteIndented = true };
 
-    internal bool Nullable { get; init; } = true;
+    [JsonPropertyName("file-scoped-namespaces")]
+    public bool FileScopedNamespaces { get; set; } = true;
 
-    internal bool DocumentationComment { get; init; } = true;
+    [JsonPropertyName("nullable")]
+    public bool Nullable { get; set; } = true;
 
-    internal bool EndOfBlockComment { get; init; } = false;
+    [JsonPropertyName("documentation-comment")]
+    public bool DocumentationComment { get; set; } = true;
 
-    internal JsonLoaderOptions JsonLoader { get; init; } = new();
+    [JsonPropertyName("end-of-block-comment")]
+    public bool EndOfBlockComment { get; set; } = false;
 
-    internal JsonNumberHandling NumberHandlingAttr { get; init; } = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals;
+    [JsonPropertyName("json-loader")]
+    public JsonLoaderOptions JsonLoader { get; set; } = new();
+
+    [JsonPropertyName("number-handling")]
+    public JsonNumberHandling NumberHandlingAttr { get; set; } = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals;
 
     public CSharpOutputOptions() { }
-} // internal readonly struct CSharpOutputOptions
+
+    internal static CSharpOutputOptions? LoadFromFile(string filename)
+    {
+        var json = File.ReadAllText(filename);
+        return JsonSerializer.Deserialize<CSharpOutputOptions>(json);
+    } // internal static CSharpOutputOptions LoadFromFile (string)
+
+    override public string ToString()
+        => JsonSerializer.Serialize(this, _options);
+} // public readonly struct CSharpOutputOptions
