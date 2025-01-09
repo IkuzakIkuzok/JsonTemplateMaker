@@ -506,7 +506,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
                 $"<param name=\"options\">Options to control the behavior during parsing.</param>",
                 $"<returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>",
                 $"<exception cref=\"System.ArgumentNullException\">",
-                $"<paramref name=\"json\"/> is <c>null</c>.",
+                $"<paramref name=\"json\"/> is <see langword=\"null\"/>.",
                 $"</exception>",
                 $"<exception cref=\"JsonException\">",
                 $"The JSON is invalid.",
@@ -528,7 +528,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
                 $"<param name=\"options\">Options to control the behavior during reading.</param>",
                 $"<returns>A <see cref=\"{this.name}\"/> instance representing the JSON value.</returns>",
                 $"<exception cref=\"System.ArgumentNullException\">",
-                $"<paramref name=\"utf8Json\"/> is <c>null</c>.",
+                $"<paramref name=\"utf8Json\"/> is <see langword=\"null\"/>.",
                 $"</exception>",
                 $"<exception cref=\"JsonException\">",
                 $"The JSON is invalid, or there is remaining data in the Stream.",
@@ -578,7 +578,7 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
             $"<param name=\"utf8Json\">The UTF-8 <see cref=\"System.IO.Stream\"/> to write to.</param>",
             $"<param name=\"options\">Options to control the conversion behavior.</param>",
             $"<exception cref=\"System.ArgumentNullException\">",
-            $"<paramref name=\"utf8Json\"/> is <c>null</c>.",
+            $"<paramref name=\"utf8Json\"/> is <see langword=\"null\"/>.",
             $"</exception>"
         );
         sb.AppendLine($"{indent}\tpublic void Serialize(Stream utf8Json, JsonSerializerOptions? options = default)");
