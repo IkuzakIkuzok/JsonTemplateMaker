@@ -569,6 +569,20 @@ internal partial class JsonObject : IEqualityComparer<JsonObject>
         sb.WriteDocComments(docComment, indent + "\t", "<inheritdoc/>");
         sb.AppendLine($"{indent}\tpublic override string ToString()");
         sb.AppendLine($"{indent}\t\t=> JsonSerializer.Serialize(this);");
+
+        sb.AppendLine();
+        sb.WriteDocComments(docComment, indent + "\t",
+            $"<summary>",
+            $"Converts the current instance to UTF-8 encoded JSON text and write it to the <see cref=\"System.IO.Stream\"/>.",
+            $"</summary>",
+            $"<param name=\"utf8Json\">The UTF-8 <see cref=\"System.IO.Stream\"/> to write to.</param>",
+            $"<param name=\"options\">Options to control the conversion behavior.</param>",
+            $"<exception cref=\"System.ArgumentNullException\">",
+            $"<paramref name=\"utf8Json\"/> is <c>null</c>.",
+            $"</exception>"
+        );
+        sb.AppendLine($"{indent}\tpublic void Serialize(Stream utf8Json, JsonSerializerOptions? options = default)");
+        sb.AppendLine($"\t\t=> JsonSerializer.Serialize(utf8Json, this, options);");
     } // private void WriteTopClassMembers (StringBuilder, string, bool)
 
     private void WriteSubClasses(StringBuilder sb, CSharpOutputOptions outputOptions, CancellationToken cancellationToken)
